@@ -118,6 +118,7 @@ def render(inp, base_price: float, base_label: str, deal: dict, model: dict) -> 
         ("PPA amortisation (after tax)", -per_share(ppa_in_eps)),
     ]
     eps_pre_dilution = base["sa_eps"] + sum(v for _, v in wf_steps)
+    wf_steps = [(lb, v) for lb, v in wf_steps if abs(v) > 1e-12]   # drop empty steps (e.g. no Mezzanine)
     wf_steps.append(("Dilution from new shares", base["pf_eps"] - eps_pre_dilution))
 
     wf_labels = ["Standalone EPS", *[lb for lb, _ in wf_steps], "Pro-forma EPS"]

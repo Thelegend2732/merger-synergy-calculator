@@ -95,7 +95,8 @@ def render(inp, dcf_out: dict, deal: dict) -> dict:
                 y=ff["Method"], x=ff["High"] - ff["Low"], base=ff["Low"], orientation="h",
                 marker_color=[NAVY if m.startswith("Trading") else AMBER if m.startswith("Precedent")
                               else GREY for m in ff["Method"]],
-                text=[f"{lo:,.2f} – {hi:,.2f}" for lo, hi in zip(ff["Low"], ff["High"])], textposition="inside",
+                text=[f"{lo:,.2f} – {hi:,.2f}" for lo, hi in zip(ff["Low"], ff["High"])], textposition="outside",
+                cliponaxis=False,
                 customdata=np.stack([ff["Low"], ff["Mid"], ff["High"], ff["Basis"]], axis=-1),
                 hovertemplate="%{y}<br>Low %{customdata[0]:,.2f} · Mid %{customdata[1]:,.2f} · "
                               "High %{customdata[2]:,.2f}<br>%{customdata[3]}<extra></extra>",
@@ -107,8 +108,11 @@ def render(inp, dcf_out: dict, deal: dict) -> dict:
                           annotation_text=f"Market {P['tgt_px']:,.2f}", annotation_position="bottom right")
             fig.add_vline(x=deal["offer_price"], line_dash="dash", line_color=RED, line_width=2,
                           annotation_text=f"Offer {deal['offer_price']:,.2f}", annotation_position="top right")
+            lo = min(ff["Low"].min(), P["tgt_px"], deal["offer_price"])
+            hi = max(ff["High"].max(), P["tgt_px"], deal["offer_price"])
+            span = max(hi - lo, 1e-6)
             fig.update_layout(showlegend=False, xaxis_title="Value per Target share", yaxis_autorange="reversed",
-                              bargap=0.35)
+                              bargap=0.35, xaxis_range=[lo - 0.05 * span, hi + 0.25 * span])   # room for labels
             style_fig(fig, "Football field: implied value per share vs. offer", height=110 + 70 * len(ff))
             show_chart(fig)
             above = ff[ff["High"] < deal["offer_price"]]["Method"].tolist()
