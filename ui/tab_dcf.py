@@ -21,25 +21,25 @@ def render(inp) -> dict:
     with col_in, card():
         card_title("Operating and valuation assumptions", "5-year DCF with a Gordon growth terminal value.")
         c1, c2, c3 = st.columns(3)
-        rev0 = c1.number_input("LTM revenue (M)", value=640.0, min_value=0.0, max_value=MAX_M, step=10.0,
+        rev0 = c1.number_input("LTM revenue (M)", min_value=0.0, max_value=MAX_M, step=10.0,
                                key="dcf_rev")
-        growth = c1.number_input("Annual revenue growth (%)", value=6.0, min_value=-50.0, max_value=100.0,
+        growth = c1.number_input("Annual revenue growth (%)", min_value=-50.0, max_value=100.0,
                                  step=0.5, key="dcf_gr") / 100
-        margin = c2.number_input("EBITDA margin (%)", value=27.0, min_value=0.0, max_value=100.0, step=0.5,
+        margin = c2.number_input("EBITDA margin (%)", min_value=0.0, max_value=100.0, step=0.5,
                                  key="dcf_mg") / 100
-        da_pct = c2.number_input("D&A (% of revenue)", value=6.0, min_value=0.0, max_value=100.0, step=0.5,
+        da_pct = c2.number_input("D&A (% of revenue)", min_value=0.0, max_value=100.0, step=0.5,
                                  key="dcf_da") / 100
-        capex_pct = c3.number_input("Capex (% of revenue)", value=7.0, min_value=0.0, max_value=100.0, step=0.5,
+        capex_pct = c3.number_input("Capex (% of revenue)", min_value=0.0, max_value=100.0, step=0.5,
                                     key="dcf_cx") / 100
-        nwc_pct = c3.number_input("NWC investment (% of Δ revenue)", value=10.0, min_value=0.0, max_value=100.0,
+        nwc_pct = c3.number_input("NWC investment (% of Δ revenue)", min_value=0.0, max_value=100.0,
                                   step=1.0, key="dcf_nwc") / 100
         c4, c5, c6, c7 = st.columns(4)
-        wacc = c4.number_input("WACC (%)", value=8.5, min_value=0.5, max_value=30.0, step=0.25, key="dcf_wacc") / 100
-        g_perp = c5.number_input("Perpetual growth g (%)", value=2.5, min_value=-2.0, max_value=10.0,
+        wacc = c4.number_input("WACC (%)", min_value=0.5, max_value=30.0, step=0.25, key="dcf_wacc") / 100
+        g_perp = c5.number_input("Perpetual growth g (%)", min_value=-2.0, max_value=10.0,
                                  step=0.25, key="dcf_g") / 100
-        tgt_netdebt = c6.number_input("Target net debt (M)", value=100.0, min_value=-MAX_M, max_value=MAX_M,
+        tgt_netdebt = c6.number_input("Target net debt (M)", min_value=-MAX_M, max_value=MAX_M,
                                       step=10.0, key="dcf_nd")
-        td_rate = c7.number_input("Interest rate on its net debt (%)", value=5.0, min_value=0.0, max_value=30.0,
+        td_rate = c7.number_input("Interest rate on its net debt (%)", min_value=0.0, max_value=30.0,
                                   step=0.25, key="dcf_td",
                                   help="Used to derive Target net income (EBIT − interest, after tax).") / 100
 

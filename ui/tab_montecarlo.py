@@ -22,8 +22,8 @@ def render(inp, deal: dict, model: dict) -> dict:
         card_title("Simulation parameters",
                    f"{N_SIM:,} draws for {year_sel}. Synergies follow a normal distribution centred on "
                    f"{cur_syn:,.1f} M; all other variables are held constant.")
-        vol = st.slider("Expected synergy volatility (std. deviation, %)", 0, 100, 20, 1, key="mc_vol") / 100
-        seed = st.number_input("Random seed (reproducibility)", value=42, min_value=0, max_value=2**31 - 1,
+        vol = st.slider("Expected synergy volatility (std. deviation, %)", 0, 100, step=1, key="mc_vol") / 100
+        seed = st.number_input("Random seed (reproducibility)", min_value=0, max_value=2**31 - 1,
                                step=1, key="mc_seed")
         if cur_syn * vol == 0:
             st.info("Zero standard deviation (volatility or expected synergies = 0): the simulation is deterministic.")

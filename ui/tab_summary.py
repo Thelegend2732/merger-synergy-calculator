@@ -18,13 +18,14 @@ def render(inp, base_price: float, base_label: str, deal: dict, model: dict) -> 
     P, yi, year_sel = inp.P, inp.yi, inp.year_sel
     base, cur_syn, cur_integ, cur_tni = model["base"], model["cur_syn"], model["cur_integ"], model["cur_tni"]
     acq_sh, tax_f = P["acq_sh"], 1 - P["tax"]
+    ppa_in_eps = 0.0 if inp.adjusted else deal["ppa_amort"]   # adjusted EPS excludes PPA amortisation
     be = breakeven_synergies(P, deal, yi)
     max_prem = max_premium_eps_neutral(P, base_price, yi)
     oc = ownership_contribution(P, deal)
 
     gap()
     with card():
-        card_title(f"EPS impact: {year_sel}",
+        card_title(f"{inp.eps_basis} EPS impact: {year_sel}",
                    f"{inp.phases[yi]:.0%} of run-rate synergies ({cur_syn:,.1f} M), integration costs "
                    f"{cur_integ:,.1f} M and DCF-derived Target net income ({cur_tni:,.1f} M). "
                    f"Target base price: {base_label}.")
@@ -46,15 +47,20 @@ def render(inp, base_price: float, base_label: str, deal: dict, model: dict) -> 
     with card():
         card_title("Deal thresholds", f"{year_sel}: what it would take for the deal to be EPS-neutral.")
         b1, b2, b3, b4 = st.columns(4)
-        b1.metric("Breakeven synergies (run-rate)", fmt_value(be["run_rate"], "m1"),
+        no_syn_needed = np.isfinite(be["run_rate"]) and be["run_rate"] <= 0
+        b1.metric("Breakeven synergies (run-rate)", "None needed" if no_syn_needed else fmt_value(be["run_rate"], "m1"),
                   delta=(fmt_value(be["cushion"], "m1") + " cushion") if np.isfinite(be["cushion"]) else None,
                   help="Minimum pre-tax run-rate synergies for pro-forma EPS to equal standalone EPS, "
                        "given the selected year's phasing.")
-        b2.metric("Max EPS-neutral premium", fmt_value(max_prem, "pct"),
-                  delta=fmt_value(max_prem - inp.premium, "pct_s") + " vs. current" if np.isfinite(max_prem) else None,
+        capped = np.isfinite(max_prem) and max_prem >= 5.0
+        b2.metric("Max EPS-neutral premium", "> 500%" if capped else fmt_value(max_prem, "pct"),
+                  delta=fmt_value(max_prem - inp.premium, "pct_s") + " vs. current"
+                  if np.isfinite(max_prem) and not capped else None,
                   help="Highest premium over the base price that keeps the deal non-dilutive.")
         b3.metric("Pro-forma ownership: Acquirer", fmt_value(oc["own_acq"], "pct"))
         b4.metric("Pro-forma ownership: Target", fmt_value(oc["own_tgt"], "pct"))
+        if no_syn_needed:
+            st.caption("The deal is accretive even with zero synergies.")
         if not np.isfinite(max_prem):
             st.caption("The deal is dilutive even at a zero premium: there is no EPS-neutral premium.")
 
@@ -62,6 +68,7 @@ def render(inp, base_price: float, base_label: str, deal: dict, model: dict) -> 
     implied_ev = deal["equity_value"] + tgt_netdebt
     summary = make_table("Metric", ["Value"], [
         ("Analysis year", year_sel, "txt"),
+        ("EPS basis", inp.eps_basis, "txt"),
         ("Target base price per share", base_price, "m2"),
         ("Offer price per share", deal["offer_price"], "m2"),
         ("Implied premium to market price", safe_div(deal["offer_price"], P["tgt_px"]) - 1, "pct_s"),
@@ -81,7 +88,7 @@ def render(inp, base_price: float, base_label: str, deal: dict, model: dict) -> 
         ("Interest expense for the year (M)", deal["interest_y"][yi], "m1"),
         ("Opportunity cost of cash (M)", deal["opp_cost"], "m1"),
         ("Financing fee amortisation (M)", deal["fee_amort_y"][yi], "m1"),
-        ("PPA intangible amortisation (M)", deal["ppa_amort"], "m1"),
+        ("PPA intangible amortisation in EPS (M)", ppa_in_eps, "m1"),
         ("Synergies captured (%)", inp.phases[yi], "pct"),
         ("Pre-tax synergies captured (M)", cur_syn, "m1"),
         ("Integration costs (M)", cur_integ, "m1"),
@@ -108,7 +115,7 @@ def render(inp, base_price: float, base_label: str, deal: dict, model: dict) -> 
         ("Mezzanine interest (after tax)", -per_share(deal["int_mezz_y"][yi])),
         ("Cash opportunity cost (after tax)", -per_share(deal["opp_cost"])),
         ("Financing fee amort. (after tax)", -per_share(deal["fee_amort_y"][yi])),
-        ("PPA amortisation (after tax)", -per_share(deal["ppa_amort"])),
+        ("PPA amortisation (after tax)", -per_share(ppa_in_eps)),
     ]
     eps_pre_dilution = base["sa_eps"] + sum(v for _, v in wf_steps)
     wf_steps.append(("Dilution from new shares", base["pf_eps"] - eps_pre_dilution))
@@ -127,7 +134,7 @@ def render(inp, base_price: float, base_label: str, deal: dict, model: dict) -> 
         totals={"marker": {"color": NAVY}},
     ))
     wf.update_layout(yaxis_title="EPS", showlegend=False)
-    style_fig(wf, f"EPS bridge ({year_sel}): standalone to pro forma", height=560)
+    style_fig(wf, f"{inp.eps_basis} EPS bridge ({year_sel}): standalone to pro forma", height=560)
 
     st.divider()
     left, right = st.columns([2, 3], gap="medium")
@@ -198,6 +205,8 @@ def render(inp, base_price: float, base_label: str, deal: dict, model: dict) -> 
 - **Breakeven synergies**: synergies at which pro-forma EPS equals standalone EPS (closed form, since NI is linear
   in synergies). **Max EPS-neutral premium**: bisection on the premium.
 - Advisory fees are a one-off closing cost and are excluded from recurring EPS.
+- **Adjusted EPS** additionally excludes PPA intangible amortisation and integration costs (non-cash or one-off),
+  the basis acquirers typically use when they announce a deal as accretive.
             """
         )
 

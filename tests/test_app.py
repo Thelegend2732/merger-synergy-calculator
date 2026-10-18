@@ -43,3 +43,20 @@ def test_market_price_basis_and_all_stock(app):
     app.run()
     assert not app.exception
     assert not [e.value for e in app.error if e.value.startswith("Error in")]
+
+
+def test_synopsys_ansys_case_matches_public_terms():
+    at = AppTest.from_file(APP, default_timeout=60)
+    at.run()
+    at.session_state["case_choice"] = "Synopsys / Ansys (announced Jan 2024)"
+    next(b for b in at.button if b.label == "Load preset").click().run()
+    assert not at.exception
+    assert not [e.value for e in at.error if e.value.startswith("Error in")]
+    summary = {m.label: m.value for m in at.metric}
+    # Disclosed: Ansys holders own ~16.5% of the combined company
+    own = float(summary["Pro-forma ownership: Target"].rstrip("%"))
+    assert own == pytest.approx(16.5, abs=0.3)
+    # Disclosed: $390.19 implied value per Ansys share
+    table = next(df.value for df in at.dataframe if "Offer price per share" in df.value.iloc[:, 0].tolist())
+    offer = table.set_index(table.columns[0]).loc["Offer price per share"].iloc[0]
+    assert offer == "390.19"

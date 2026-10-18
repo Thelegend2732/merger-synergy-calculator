@@ -188,3 +188,16 @@ def test_montecarlo_matches_deterministic_with_full_mechanics(full_params):
     deal = build_deal(full_params, 20.0, 0.30)
     flat = run_montecarlo(full_params, deal, 1, vol=0.0, seed=1, n_sim=100)
     np.testing.assert_allclose(flat["eps"], project_years(full_params, deal)[1][3]["pf_eps"])
+
+
+def test_adjusted_eps_excludes_ppa_and_integration(full_params):
+    adj = {**full_params, "adjusted_eps": True}
+    deal = build_deal(full_params, 20.0, 0.30)
+    gaap = project_years(full_params, deal)[0]
+    cash = project_years(adj, deal)[0]
+    assert cash[1] == 0.0                                    # no integration costs on adjusted basis
+    t = full_params["tax"]
+    expected = (deal["ppa_amort"] + full_params["integration"]) * (1 - t)
+    assert cash[3]["pf_ni"] - gaap[3]["pf_ni"] == pytest.approx(expected)
+    be = breakeven_synergies(adj, deal, 0)
+    assert scenario(adj, deal, be["captured"], 0.0, cash[2], 0)["acc"] == pytest.approx(0.0, abs=1e-12)

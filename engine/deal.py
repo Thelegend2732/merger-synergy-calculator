@@ -111,11 +111,11 @@ def build_deal(p: dict, base_price: float, premium: float) -> dict:
 
 def year_inputs(p: dict, i: int) -> tuple:
     """
-    Single source for year i (0..2): captured (phased) synergies, integration costs (Year 1 only)
-    and the Target's net income from the DCF.
+    Single source for year i (0..2): captured (phased) synergies, integration costs (Year 1 only;
+    excluded on an adjusted EPS basis) and the Target's net income from the DCF.
     """
     syn = p["total_syn"] * p["phases"][i]
-    integ = p["integration"] if i == 0 else 0.0
+    integ = p["integration"] if i == 0 and not p.get("adjusted_eps", False) else 0.0
     return syn, integ, p["tgt_ni_y"][i]
 
 
@@ -124,9 +124,12 @@ def pf_net_income(p: dict, deal: dict, year_idx: int, synergies, integration, tg
     Pro-forma net income for `year_idx` (accepts synergy arrays, e.g. for Monte Carlo):
     Acquirer NI + Target NI + (synergies − integration − financing cost − fee amortisation
     − PPA intangible amortisation) × (1 − t).
+    On an adjusted basis (p['adjusted_eps']) PPA amortisation is excluded, as banks and acquirers
+    usually do when they quote "cash EPS" accretion.
     """
     tax = p["tax"]
-    return p["acq_ni"] + tgt_ni + (synergies - integration - deal["eps_costs_y"][year_idx]) * (1 - tax)
+    costs = deal["eps_costs_y"][year_idx] - (deal["ppa_amort"] if p.get("adjusted_eps", False) else 0.0)
+    return p["acq_ni"] + tgt_ni + (synergies - integration - costs) * (1 - tax)
 
 
 def scenario(p: dict, deal: dict, synergies: float, integration: float, tgt_ni: float, year_idx: int = 0) -> dict:

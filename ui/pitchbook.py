@@ -40,7 +40,7 @@ def _assumptions(inp, out: dict):
         ("Run-rate synergies at EBITDA level (M)", inp.total_syn, "m1"),
         ("Integration costs (M)", inp.integration, "m1"),
         *[(f"Phasing Year {i + 1}", v, "pct") for i, v in enumerate(inp.phases)],
-        ("Analysis year", inp.year_sel, "txt"),
+        ("Analysis year", inp.year_sel, "txt"), ("EPS basis", inp.eps_basis, "txt"),
         ("DCF", "", "txt"),
         ("LTM revenue (M)", d["rev0"], "m1"), ("Revenue growth", d["growth"], "pct"),
         ("EBITDA margin", d["margin"], "pct"), ("D&A (% of revenue)", d["da_pct"], "pct"),

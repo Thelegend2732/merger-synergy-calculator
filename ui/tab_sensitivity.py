@@ -17,7 +17,7 @@ def render(inp, base_price: float, deal: dict, model: dict) -> dict:
     P, proj, base = inp.P, model["proj"], model["base"]
     gap()
     with card():
-        card_title("Accretion / (dilution) by year",
+        card_title(f"{inp.eps_basis} accretion / (dilution) by year",
                    "Sidebar phasing: " + " · ".join(f"{y} {p_:.0%}" for y, p_ in zip(YEARS, inp.phases))
                    + ". Integration costs fall in Year 1.")
         for col, yr, p_ in zip(st.columns(len(YEARS)), YEARS, proj):
@@ -31,7 +31,7 @@ def render(inp, base_price: float, deal: dict, model: dict) -> dict:
         ("Integration costs (M)", [p_[1] for p_ in proj], "m1"),
         ("Target net income — DCF (M)", [p_[2] for p_ in proj], "m1"),
         ("Pre-tax financing charge (M)", deal["fin_cost_y"] + deal["fee_amort_y"], "m1"),
-        ("PPA intangible amortisation (M)", [deal["ppa_amort"]] * len(YEARS), "m1"),
+        ("PPA amortisation in EPS (M)", [0.0 if inp.adjusted else deal["ppa_amort"]] * len(YEARS), "m1"),
         ("Pro-forma net income (M)", [p_[3]["pf_ni"] for p_ in proj], "m1"),
         ("Pro-forma shares (M)", [p_[3]["pf_shares"] for p_ in proj], "m2"),
         ("Standalone EPS", [p_[3]["sa_eps"] for p_ in proj], "eps"),

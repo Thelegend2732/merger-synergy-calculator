@@ -21,16 +21,19 @@ import streamlit as st
 
 from engine import project_years, require
 from ui import alerts, pitchbook, tab_capital, tab_dcf, tab_montecarlo, tab_sensitivity, tab_summary
+from ui.cases import init_state, render_case_banner
 from ui.components import guarded
 from ui.sidebar import render_sidebar
 
 st.set_page_config(page_title="Merger Synergy Calculator", layout="wide")
+init_state()   # seed widget values (illustrative case) on the first run
 
 st.title("Merger Synergy Calculator")
 st.caption("DCF valuation, capital structure and EPS accretion/dilution "
            "(amounts in millions, except per-share data).")
 
 export_box, inp = render_sidebar()
+render_case_banner()
 P = inp.P
 alerts_box = st.container()   # global alerts: filled at the end, visible from every tab
 t_dcf, t_cap, t_sum, t_sens, t_mc = st.tabs([

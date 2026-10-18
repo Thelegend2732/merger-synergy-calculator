@@ -27,24 +27,24 @@ def render(inp, base_price: float) -> dict:
                    "Acquirer shares.")
         a, b = st.columns(2)
         with a:
-            cash_share = st.slider("Balance sheet cash (% of cash needed)", 0, 100, 30, 5, key="cap_cash")
-            senior_share = st.slider("Senior debt (%)", 0, 100, 50, 5, key="cap_sr")
+            cash_share = st.slider("Balance sheet cash (% of cash needed)", 0, 100, step=5, key="cap_cash")
+            senior_share = st.slider("Senior debt (%)", 0, 100, step=5, key="cap_sr")
         with b:
-            rate_cash = st.number_input("Opportunity cost of cash (%)", value=3.0, min_value=0.0,
+            rate_cash = st.number_input("Opportunity cost of cash (%)", min_value=0.0,
                                         max_value=20.0, step=0.25, key="rate_cash",
                                         help="Pre-tax interest income forgone by using balance sheet cash.") / 100
-            senior_rate = st.number_input("Senior interest rate (%)", value=5.5, min_value=0.0, max_value=30.0,
+            senior_rate = st.number_input("Senior interest rate (%)", min_value=0.0, max_value=30.0,
                                           step=0.25, key="rate_sr") / 100
-            mezz_rate = st.number_input("Mezzanine interest rate (%)", value=10.0, min_value=0.0, max_value=40.0,
+            mezz_rate = st.number_input("Mezzanine interest rate (%)", min_value=0.0, max_value=40.0,
                                         step=0.25, key="rate_mz") / 100
         f1, f2, f3 = st.columns(3)
-        senior_term = f1.number_input("Senior amortisation term (years)", value=7, min_value=0, max_value=30,
+        senior_term = f1.number_input("Senior amortisation term (years)", min_value=0, max_value=30,
                                       step=1, key="sr_term",
                                       help="Straight-line amortisation; 0 = bullet. Mezzanine is always bullet.")
-        fee_adv = f2.number_input("Advisory fees (% of equity value)", value=1.5, min_value=0.0,
+        fee_adv = f2.number_input("Advisory fees (% of equity value)", min_value=0.0,
                                   max_value=10.0, step=0.25, key="fee_adv",
                                   help="M&A advisory, legal and due diligence: one-off, excluded from recurring EPS.") / 100
-        fee_fin = f3.number_input("Financing fees (% of new debt)", value=2.0, min_value=0.0,
+        fee_fin = f3.number_input("Financing fees (% of new debt)", min_value=0.0,
                                   max_value=10.0, step=0.25, key="fee_fin",
                                   help="Capitalised and amortised over the Senior term.") / 100
 
@@ -149,7 +149,7 @@ def render(inp, base_price: float) -> dict:
 
     st.divider()
     st.subheader("Leverage risk")
-    incl_syn = st.checkbox("Include run-rate synergies in pro-forma EBITDA", value=False, key="incl_syn",
+    incl_syn = st.checkbox("Include run-rate synergies in pro-forma EBITDA", key="incl_syn",
                            help="Excluded by default (the conservative approach rating agencies take).")
     lev = leverage_metrics(P, deal, inp.total_syn if incl_syn else 0.0)
     lp = lev["lev_pf"]
