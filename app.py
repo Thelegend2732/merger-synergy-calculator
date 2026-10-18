@@ -20,7 +20,7 @@ from __future__ import annotations
 import streamlit as st
 
 from engine import project_years, require
-from ui import alerts, pitchbook, tab_capital, tab_dcf, tab_montecarlo, tab_sensitivity, tab_summary
+from ui import alerts, pitchbook, tab_capital, tab_dcf, tab_montecarlo, tab_sensitivity, tab_summary, tab_valuation
 from ui.cases import init_state, render_case_banner
 from ui.components import guarded
 from ui.sidebar import render_sidebar
@@ -36,8 +36,8 @@ export_box, inp = render_sidebar()
 render_case_banner()
 P = inp.P
 alerts_box = st.container()   # global alerts: filled at the end, visible from every tab
-t_dcf, t_cap, t_sum, t_sens, t_mc = st.tabs([
-    "DCF Valuation", "Capital Structure & Risk", "Transaction Summary",
+t_dcf, t_val, t_cap, t_sum, t_sens, t_mc = st.tabs([
+    "DCF Valuation", "Comps & Football Field", "Capital Structure & Risk", "Transaction Summary",
     "Projections & Sensitivity", "Monte Carlo Risk",
 ])
 out: dict = {}
@@ -50,6 +50,11 @@ with guarded(t_dcf, "DCF Valuation"):
 with guarded(t_cap, "Capital Structure & Risk"):
     require("dcf" in out, "the DCF tab failed; fix it first.")
     out["cap"] = tab_capital.render(inp, out["dcf"]["base_price"])
+
+# Drawn in the second tab, but computed here because the football field needs the offer price
+with guarded(t_val, "Comps & Football Field"):
+    require("cap" in out, "the Capital Structure tab failed; fix it first.")
+    out["val"] = tab_valuation.render(inp, out["dcf"], out["cap"]["deal"])
 
 # Model core: ONE base (phased synergies + DCF Target net income) for Summary, Sensitivity and Monte Carlo
 model, model_err = None, ""

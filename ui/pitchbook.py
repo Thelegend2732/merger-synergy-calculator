@@ -66,13 +66,16 @@ def _collect_tables(inp, out: dict) -> dict:
                 **{k: out["dcf"][k] for k in ("dcf_proj", "dcf_bridge", "dcf_sens")},
                 **{k: out["cap"][k] for k in ("tranches", "sources_uses", "debt_schedule", "credit")},
                 **out["summary"], **out["sens"],
-                **{k: out["mc"][k] for k in ("mc_params", "mc_stats", "mc_hist", "mc_sim")})
+                **{k: out["val"][k] for k in ("comps", "precedents", "football", "multiples", "target_multiples")},
+                **{k: out["mc"][k] for k in ("mc_params", "mc_stats", "mc_hist", "mc_sim", "mc_tornado")})
 
 
 def _signature(inp, out: dict) -> str:
     """Fingerprint of every input that affects the workbook."""
     payload = dict(P=inp.P, dcf=out["dcf"]["dcf_inputs"], premium=inp.premium, basis=inp.price_basis,
-                   year=inp.year_sel, vol=out["mc"]["vol"], seed=out["mc"]["seed"], incl_syn=out["cap"]["incl_syn"])
+                   year=inp.year_sel, vol=out["mc"]["vol"], seed=out["mc"]["seed"], drivers=out["mc"]["drivers"],
+                   incl_syn=out["cap"]["incl_syn"], comps=out["val"]["comps"].to_json(),
+                   precedents=out["val"]["precedents"].to_json(), football=out["val"]["football"].to_json())
     return hashlib.sha256(json.dumps(payload, sort_keys=True, default=str).encode()).hexdigest()[:16]
 
 

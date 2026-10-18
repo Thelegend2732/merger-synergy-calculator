@@ -33,23 +33,41 @@ def sensitivity_matrix(p: dict, base_price: float, premium: float, year_idx: int
     return dict(z=z, syn_axis=syn_axis, prem_axis=prem_axis, fallback=fallback, n_x=n_x, n_y=n_y)
 
 
-def run_montecarlo(p: dict, deal: dict, year_idx: int, vol: float, seed: int, n_sim: int = N_SIM) -> dict:
+def _pf_eps(p: dict, deal: dict, year_idx: int, syn, integ, tni, rate_shock):
+    """Pro-forma EPS with an extra rate shock on the (floating) Senior balance; vectorised."""
+    extra = deal["senior_beg"][year_idx] * rate_shock * (1 - p["tax"])
+    return (pf_net_income(p, deal, year_idx, syn, integ, tni) - extra) / (p["acq_sh"] + deal["new_shares"])
+
+
+def run_montecarlo(p: dict, deal: dict, year_idx: int, vol: float, seed: int, n_sim: int = N_SIM,
+                   tni_vol: float = 0.0, rate_vol: float = 0.0, integ_vol: float = 0.0, corr: float = 0.0) -> dict:
     """
-    Monte Carlo on captured synergies for `year_idx`: normal distribution centred on the phased
-    synergies with standard deviation = |synergies| × vol. Everything else (Target NI from the DCF,
-    financing cost, amortisation) is held at the Summary base case.
+    Multi-variable Monte Carlo on the selected year's pro-forma EPS. Four independent standard normal
+    draws per iteration (always drawn in the same order, so a seed reproduces the same scenarios):
+      - synergies captured ~ N(phased synergies, |synergies| × vol)
+      - Target net income  ~ base × (1 + tni_vol × z), with correlation `corr` to the synergy draw
+        (both depend on how well the integration is executed)
+      - interest-rate shock on the Senior balance ~ N(0, rate_vol), i.e. floating-rate debt
+      - integration cost overrun ~ base × max(0, 1 + integ_vol × z) (only where integration costs apply)
+    With every volatility but `vol` at zero it reduces to the single-variable synergy simulation.
 
     Uses a local generator (RandomState) instead of NumPy's global seed: deterministic, and no state
     shared between sessions.
     """
     cur_syn, cur_integ, cur_tni = year_inputs(p, year_idx)
+    require(-1.0 <= corr <= 1.0, "correlation must be between -1 and 1.")
     std = abs(cur_syn * vol)
 
     rs = np.random.RandomState(int(seed))
-    syn_draws = rs.normal(loc=cur_syn, scale=std, size=n_sim)
-    pf_ni = pf_net_income(p, deal, year_idx, syn_draws, cur_integ, cur_tni)
-    pf_shares = p["acq_sh"] + deal["new_shares"]
-    eps = pf_ni / pf_shares                          # acq_sh > 0 guaranteed by input caps
+    z_syn = rs.standard_normal(n_sim)
+    z_tni = corr * z_syn + np.sqrt(1 - corr ** 2) * rs.standard_normal(n_sim)
+    z_rate, z_integ = rs.standard_normal(n_sim), rs.standard_normal(n_sim)
+
+    syn_draws = cur_syn + std * z_syn
+    tni_draws = cur_tni + abs(cur_tni) * tni_vol * z_tni
+    rate_draws = rate_vol * z_rate
+    integ_draws = cur_integ * np.maximum(0.0, 1 + integ_vol * z_integ)
+    eps = _pf_eps(p, deal, year_idx, syn_draws, integ_draws, tni_draws, rate_draws)
     require(bool(np.all(np.isfinite(eps))), "the simulation produced non-finite values; check extreme inputs.")
 
     sa_eps = safe_div(p["acq_ni"], p["acq_sh"])
@@ -61,10 +79,35 @@ def run_montecarlo(p: dict, deal: dict, year_idx: int, vol: float, seed: int, n_
     counts, edges = safe_histogram(eps, bins=40)
     return dict(
         mean_syn=cur_syn, std_syn=std, integration=cur_integ, tgt_ni=cur_tni, sa_eps=sa_eps,
-        syn_draws=syn_draws, eps=eps, acc=acc, prob_acc=float(np.mean(accretive)) * 100,
+        syn_draws=syn_draws, tni_draws=tni_draws, rate_draws=rate_draws, integ_draws=integ_draws,
+        eps=eps, acc=acc, prob_acc=float(np.mean(accretive)) * 100,
         eps_mean=float(np.mean(eps)), eps_p5=float(np.percentile(eps, 5)),
         eps_stats=describe(eps), acc_stats=describe(acc),
         counts=counts, edges=edges, mids=(edges[:-1] + edges[1:]) / 2, widths=np.diff(edges),
         cnt_acc=np.histogram(eps[accretive], bins=edges)[0],
         cnt_dil=np.histogram(eps[~accretive], bins=edges)[0],
     )
+
+
+def eps_tornado(p: dict, deal: dict, year_idx: int, vol: float, tni_vol: float = 0.0, rate_vol: float = 0.0,
+                integ_vol: float = 0.0) -> pd.DataFrame:
+    """
+    One-at-a-time sensitivity: pro-forma EPS with each risk driver moved ±1 standard deviation while the
+    others stay at the base case. Sorted by swing (largest first), as plotted in a tornado chart.
+    """
+    syn, integ, tni = year_inputs(p, year_idx)
+    base = float(_pf_eps(p, deal, year_idx, syn, integ, tni, 0.0))
+    shocks = [
+        ("Synergies captured", abs(syn) * vol, lambda d: (syn + d, integ, tni, 0.0)),
+        ("Target net income", abs(tni) * tni_vol, lambda d: (syn, integ, tni + d, 0.0)),
+        ("Interest rate on Senior debt", rate_vol, lambda d: (syn, integ, tni, d)),
+        ("Integration cost overrun", integ * integ_vol, lambda d: (syn, integ + d, tni, 0.0)),
+    ]
+    rows = []
+    for name, sd, args in shocks:
+        down = float(_pf_eps(p, deal, year_idx, *args(-sd)))
+        up = float(_pf_eps(p, deal, year_idx, *args(sd)))
+        rows.append((name, sd, min(down, up), max(down, up), abs(up - down)))
+    df = pd.DataFrame(rows, columns=["Driver", "1 std. dev.", "EPS low", "EPS high", "Swing"])
+    df.attrs["base_eps"] = base
+    return df.sort_values("Swing", ascending=False, ignore_index=True)

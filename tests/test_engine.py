@@ -201,3 +201,53 @@ def test_adjusted_eps_excludes_ppa_and_integration(full_params):
     assert cash[3]["pf_ni"] - gaap[3]["pf_ni"] == pytest.approx(expected)
     be = breakeven_synergies(adj, deal, 0)
     assert scenario(adj, deal, be["captured"], 0.0, cash[2], 0)["acc"] == pytest.approx(0.0, abs=1e-12)
+
+
+# --- Phase 4: relative valuation and multi-variable risk -----------------------------------
+import pandas as pd  # noqa: E402
+
+from engine import eps_tornado, football_field, implied_price, multiple_stats  # noqa: E402
+
+
+def test_implied_price_from_ev_multiple():
+    # 10x × 100 EBITDA = 1,000 EV; less 200 net debt = 800 equity; / 40 shares = 20
+    assert implied_price(10.0, 100.0, 200.0, 40.0) == pytest.approx(20.0)
+
+
+def test_multiple_stats_ignores_bad_values():
+    s = multiple_stats([8.0, 10.0, 12.0, None, -5.0, float("nan")])
+    assert s["n"] == 3 and s["median"] == pytest.approx(10.0)
+    assert s["p25"] == pytest.approx(9.0) and s["p75"] == pytest.approx(11.0)
+
+
+def test_football_field_rows():
+    target = dict(ebitda=100.0, revenue=400.0, net_debt=200.0, shares=40.0)
+    comps = pd.DataFrame({"Company": ["A", "B", "C"], "EV/EBITDA": [8.0, 10.0, 12.0], "EV/Revenue": [2.0, 2.5, 3.0]})
+    grid = pd.DataFrame(np.arange(25, dtype=float).reshape(5, 5))
+    ff = football_field(target, comps, None, grid, (15.0, 25.0))
+    by = ff.set_index("Method")
+    row = by.loc["Trading comps — EV/EBITDA"]
+    assert (row.Low, row.Mid, row.High) == pytest.approx((17.5, 20.0, 22.5))
+    dcf = by.loc["DCF (WACC ±0.5 pp, g ±0.5 pp)"]
+    assert (dcf.Low, dcf.Mid, dcf.High) == pytest.approx((6.0, 12.0, 18.0))
+    assert by.loc["52-week trading range"].High == 25.0
+    assert len(football_field(target, None, None, None, None)) == 0
+
+
+def test_montecarlo_extra_drivers_widen_distribution(full_params):
+    deal = build_deal(full_params, 20.0, 0.30)
+    one = run_montecarlo(full_params, deal, 0, vol=0.2, seed=3, n_sim=4000)
+    many = run_montecarlo(full_params, deal, 0, vol=0.2, seed=3, n_sim=4000, tni_vol=0.15, rate_vol=0.01,
+                          integ_vol=0.3, corr=0.5)
+    np.testing.assert_array_equal(one["syn_draws"], many["syn_draws"])   # same seed, same synergy path
+    assert np.std(many["eps"]) > np.std(one["eps"])
+    assert np.corrcoef(many["syn_draws"], many["tni_draws"])[0, 1] == pytest.approx(0.5, abs=0.05)
+
+
+def test_tornado_is_symmetric_and_sorted(full_params):
+    deal = build_deal(full_params, 20.0, 0.30)
+    t = eps_tornado(full_params, deal, 0, vol=0.2, tni_vol=0.1, rate_vol=0.01, integ_vol=0.25)
+    assert list(t["Swing"]) == sorted(t["Swing"], reverse=True)
+    base = t.attrs["base_eps"]
+    np.testing.assert_allclose(base - t["EPS low"], t["EPS high"] - base)   # linear model: symmetric swings
+    assert base == pytest.approx(project_years(full_params, deal)[0][3]["pf_eps"])

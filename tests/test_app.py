@@ -31,8 +31,8 @@ def test_pitchbook_export(app):
 
 def test_every_tab_renders(app):
     labels = [t.label for t in app.tabs]
-    assert labels == ["DCF Valuation", "Capital Structure & Risk", "Transaction Summary",
-                      "Projections & Sensitivity", "Monte Carlo Risk"]
+    assert labels == ["DCF Valuation", "Comps & Football Field", "Capital Structure & Risk",
+                      "Transaction Summary", "Projections & Sensitivity", "Monte Carlo Risk"]
     for tab in app.tabs:
         assert len(tab.children) > 0, tab.label
 

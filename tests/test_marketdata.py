@@ -45,5 +45,7 @@ def test_target_mapping_ratios_and_bounds():
 def test_cases_define_every_widget(name):
     values = CASES[name]["values"]
     assert set(values) == set(DEFAULT_VALUES)
-    for k, v in values.items():   # widget types must match the defaults (float vs int vs str)
-        assert type(v) is type(DEFAULT_VALUES[k]), k
+    for k, v in values.items():   # widget types must match the defaults (float vs int vs str); None = empty
+        assert v is None or DEFAULT_VALUES[k] is None or type(v) is type(DEFAULT_VALUES[k]), k
+    for row in CASES[name]["comps"] + CASES[name]["precedents"]:
+        assert {"EV/EBITDA", "EV/Revenue"} <= set(row)

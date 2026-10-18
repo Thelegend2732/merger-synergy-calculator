@@ -84,11 +84,62 @@ def fetch_company(ticker: str) -> dict:
         cash=(_latest(bs, "Cash Cash Equivalents And Short Term Investments", "Cash And Cash Equivalents") or 0) / m,
         book_equity=(_latest(bs, "Stockholders Equity", "Common Stock Equity") or 0) / m,
         beta=info.get("beta"),
+        low_52w=info.get("fiftyTwoWeekLow"), high_52w=info.get("fiftyTwoWeekHigh"),
     )
     missing = [k for k in ("shares", "revenue", "ebitda") if not d[k]]
     if missing:
         raise MarketDataError(f"{ticker}: statements are missing {', '.join(missing)}.")
     return d
+
+
+def fetch_multiples(ticker: str, as_of: str | None = None) -> dict:
+    """
+    EV/EBITDA and EV/Revenue of a peer. EV = price × shares + total debt − cash & short-term investments.
+    With `as_of` (YYYY-MM-DD) the price is the last close on or before that date and the statements are
+    the fiscal year closest to it, so a historical deal can be benchmarked without look-ahead bias;
+    otherwise the current price and the latest fiscal year are used.
+    """
+    try:
+        import pandas as pd
+        import yfinance as yf
+
+        t = yf.Ticker(ticker.strip().upper())
+        inc, bs = t.income_stmt, t.balance_sheet
+        if inc is None or inc.empty:
+            raise MarketDataError(f"No financial statements found for {ticker}.")
+        if as_of:
+            when = pd.Timestamp(as_of)
+            hist = t.history(start=when - pd.Timedelta(days=10), end=when + pd.Timedelta(days=1), auto_adjust=False)
+            if hist.empty:
+                raise MarketDataError(f"No price history for {ticker} around {as_of}.")
+            price = float(hist["Close"].iloc[-1])
+            col = min(inc.columns, key=lambda d: abs((pd.Timestamp(d).tz_localize(None) - when).days))
+        else:
+            info = t.info or {}
+            price = info.get("currentPrice") or info.get("regularMarketPrice") or info.get("previousClose")
+            col = inc.columns[0]
+        name = (t.info or {}).get("shortName", ticker) if not as_of else ticker.upper()
+    except MarketDataError:
+        raise
+    except Exception as exc:  # noqa: BLE001
+        raise MarketDataError(f"Could not download {ticker}: {exc}") from exc
+
+    def at(df, *rows):
+        for r in rows:
+            if df is not None and r in df.index and col in df.columns and df.loc[r, col] == df.loc[r, col]:
+                return float(df.loc[r, col])
+        return None
+
+    shares = at(bs, "Ordinary Shares Number", "Share Issued")
+    ebitda, revenue = at(inc, "EBITDA", "Normalized EBITDA"), at(inc, "Total Revenue")
+    if not (price and shares and revenue):
+        raise MarketDataError(f"{ticker}: missing price, shares or revenue.")
+    ev = price * shares + (at(bs, "Total Debt") or 0.0) - (
+        at(bs, "Cash Cash Equivalents And Short Term Investments", "Cash And Cash Equivalents") or 0.0)
+    return {"Company": name, "Ticker": ticker.strip().upper(), "Fiscal year": str(pd.Timestamp(col).date()),
+            "EV (M)": round(ev / 1e6, 1),
+            "EV/EBITDA": round(ev / ebitda, 1) if ebitda and ebitda > 0 else None,
+            "EV/Revenue": round(ev / revenue, 2)}
 
 
 # ---------------------------------------------------------------------------

@@ -6,8 +6,10 @@ writing the case's values into session state inside a button callback, before wi
 """
 from __future__ import annotations
 
+import pandas as pd
 import streamlit as st
 
+from engine import MAX_PX
 from marketdata.cases import BASIS_MARKET, CASES, DEFAULT_VALUES, ILLUSTRATIVE
 from marketdata.yahoo import (
     EQUITY_RISK_PREMIUM, RISK_FREE, MarketDataError, acquirer_inputs, fetch_company, target_inputs,
@@ -19,11 +21,30 @@ INFO_KEY = "case_info"     # metadata of the loaded case (shown above the tabs)
 ERROR_KEY = "case_error"   # last import error, shown once in the sidebar
 
 
+COMPS_COLS = ["Company", "Ticker", "EV/EBITDA", "EV/Revenue"]
+PREC_COLS = ["Deal", "Year", "EV/EBITDA", "EV/Revenue"]
+
+
+def table_state(rows: list, cols: list) -> pd.DataFrame:
+    return pd.DataFrame(rows, columns=cols).astype({"EV/EBITDA": float, "EV/Revenue": float})
+
+
+def set_tables(comps: list, precedents: list, note: str = "") -> None:
+    """Replace the comps / precedents tables and discard pending edits in their data editors."""
+    st.session_state["comps"] = table_state(comps, COMPS_COLS)
+    st.session_state["precedents"] = table_state(precedents, PREC_COLS)
+    st.session_state["comps_note"] = note
+    for k in ("comps_editor", "prec_editor"):
+        st.session_state.pop(k, None)
+
+
 def init_state() -> None:
     """Seed every widget with the illustrative case on the first run of a session."""
     for k, v in DEFAULT_VALUES.items():
         st.session_state.setdefault(k, v)
-    st.session_state.setdefault(INFO_KEY, ILLUSTRATIVE)
+    if INFO_KEY not in st.session_state:
+        st.session_state[INFO_KEY] = ILLUSTRATIVE
+        set_tables(ILLUSTRATIVE["comps"], ILLUSTRATIVE["precedents"], ILLUSTRATIVE["comps_note"])
 
 
 def _apply(values: dict) -> None:
@@ -34,6 +55,7 @@ def _apply(values: dict) -> None:
 def _load_preset() -> None:
     case = CASES[st.session_state["case_choice"]]
     _apply(case["values"])
+    set_tables(case["comps"], case["precedents"], case["comps_note"])
     st.session_state[INFO_KEY] = case
     st.session_state.pop(ERROR_KEY, None)
 
@@ -41,6 +63,10 @@ def _load_preset() -> None:
 @st.cache_data(ttl=3600, show_spinner=False)
 def _cached_fetch(ticker: str) -> dict:
     return fetch_company(ticker)
+
+
+def _px_or_none(v) -> float | None:
+    return None if v is None else round(min(max(float(v), 0.01), MAX_PX), 2)
 
 
 def _load_market() -> None:
@@ -52,7 +78,9 @@ def _load_market() -> None:
         return
     tax = st.session_state["tax"] / 100
     tgt_vals, w = target_inputs(tgt, tax)
-    _apply({**acquirer_inputs(acq), **tgt_vals, "basis": BASIS_MARKET})
+    _apply({**acquirer_inputs(acq), **tgt_vals, "basis": BASIS_MARKET,
+            "w52_lo": _px_or_none(tgt.get("low_52w")), "w52_hi": _px_or_none(tgt.get("high_52w"))})
+    set_tables([], [], "Add peers by ticker (current multiples) or type them in.")
 
     notes = [
         f"Acquirer: {acq['name']} ({acq['ticker']}), fiscal year ended {acq['fiscal_year_end']}, "

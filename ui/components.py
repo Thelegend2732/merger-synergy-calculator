@@ -128,6 +128,8 @@ def cached_sensitivity_matrix(p: dict, base_price: float, premium: float, year_i
 
 
 @st.cache_data(show_spinner=False)
-def cached_montecarlo(p: dict, deal: dict, year_idx: int, vol: float, seed: int) -> dict:
+def cached_montecarlo(p: dict, deal: dict, year_idx: int, vol: float, seed: int, tni_vol: float,
+                      rate_vol: float, integ_vol: float, corr: float) -> dict:
     """Monte Carlo simulation (5,000 draws). The cache is invalidated when any model input changes."""
-    return run_montecarlo(p, deal, year_idx, vol, seed, N_SIM)
+    return run_montecarlo(p, deal, year_idx, vol, seed, N_SIM, tni_vol=tni_vol, rate_vol=rate_vol,
+                          integ_vol=integ_vol, corr=corr)

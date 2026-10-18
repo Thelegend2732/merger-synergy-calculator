@@ -25,16 +25,32 @@ DEFAULT_VALUES = dict(
     # Capital structure
     cap_cash=30, cap_sr=50, rate_cash=3.0, rate_sr=5.5, rate_mz=10.0, sr_term=7, fee_adv=1.5, fee_fin=2.0,
     incl_syn=False,
-    # Monte Carlo
-    mc_vol=20, mc_seed=42,
+    # Monte Carlo (synergy vol %, Target NI vol %, rate shock bp, integration overrun %, correlation)
+    mc_vol=20, mc_seed=42, mc_tni_vol=10, mc_rate_bp=50, mc_integ_vol=25, mc_corr=0.3,
+    # Football field: Target unaffected 52-week range (None = not available)
+    w52_lo=16.5, w52_hi=23.0,
 )
 
 ILLUSTRATIVE = dict(
     name="Illustrative deal",
     description="Hypothetical mid-cap acquisition used to demonstrate the model.",
     sources=[],
-    assumptions=["All figures are hypothetical."],
+    assumptions=["All figures, including peers and precedent transactions, are hypothetical."],
     values=DEFAULT_VALUES,
+    comps=[
+        {"Company": "Peer A", "Ticker": "", "EV/EBITDA": 8.5, "EV/Revenue": 2.1},
+        {"Company": "Peer B", "Ticker": "", "EV/EBITDA": 9.2, "EV/Revenue": 2.4},
+        {"Company": "Peer C", "Ticker": "", "EV/EBITDA": 10.1, "EV/Revenue": 2.8},
+        {"Company": "Peer D", "Ticker": "", "EV/EBITDA": 11.0, "EV/Revenue": 3.0},
+        {"Company": "Peer E", "Ticker": "", "EV/EBITDA": 12.4, "EV/Revenue": 3.3},
+    ],
+    comps_note="Hypothetical peer group.",
+    precedents=[
+        {"Deal": "Deal 1", "Year": 2021, "EV/EBITDA": 11.5, "EV/Revenue": 3.0},
+        {"Deal": "Deal 2", "Year": 2022, "EV/EBITDA": 12.8, "EV/Revenue": 3.4},
+        {"Deal": "Deal 3", "Year": 2023, "EV/EBITDA": 13.5, "EV/Revenue": 3.6},
+        {"Deal": "Deal 4", "Year": 2024, "EV/EBITDA": 14.2, "EV/Revenue": 4.1},
+    ],
 )
 
 _ANSYS_PR = "https://www.sec.gov/Archives/edgar/data/1013462/000101346224000006/anssex991-pressrelease2023.htm"
@@ -82,8 +98,21 @@ SYNOPSYS_ANSYS = dict(
         # Funding: ≈15% balance sheet cash, ≈85% new senior debt (bonds + term loans)
         "cap_cash": 15, "cap_sr": 85, "rate_cash": 4.5, "rate_sr": 5.25, "rate_mz": 8.0, "sr_term": 7,
         "fee_adv": 0.5, "fee_fin": 1.0,
-        "mc_vol": 25,
+        "mc_vol": 25, "mc_tni_vol": 10, "mc_rate_bp": 75, "mc_integ_vol": 30, "mc_corr": 0.3,
+        "w52_lo": None, "w52_hi": None,
     },
+    # Engineering-software peers of Ansys as of 21 Dec 2023 (undisturbed date), built with
+    # scripts/build_comps_snapshot.py: last close on/before that date, fiscal year closest to it, GAAP EBITDA.
+    comps=[
+        {"Company": "Cadence Design Systems", "Ticker": "CDNS", "EV/EBITDA": 50.9, "EV/Revenue": 18.22},
+        {"Company": "Autodesk", "Ticker": "ADSK", "EV/EBITDA": 41.1, "EV/Revenue": 9.48},
+        {"Company": "PTC", "Ticker": "PTC", "EV/EBITDA": 36.6, "EV/Revenue": 10.47},
+        {"Company": "Bentley Systems", "Ticker": "BSY", "EV/EBITDA": 56.3, "EV/Revenue": 13.61},
+        {"Company": "Dassault Systèmes", "Ticker": "DSY.PA", "EV/EBITDA": 30.7, "EV/Revenue": 9.88},
+    ],
+    comps_note=("Peers as of 21 Dec 2023 (Yahoo Finance; GAAP EBITDA; fiscal year closest to that date). "
+                "No precedent transactions are preloaded: add deals you can source in the table."),
+    precedents=[],
 )
 
 CASES = {c["name"]: c for c in (ILLUSTRATIVE, SYNOPSYS_ANSYS)}

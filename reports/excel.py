@@ -132,9 +132,9 @@ def _row_of(df: pd.DataFrame, label: str) -> int:
 def build_pitchbook(x: dict) -> bytes:
     """
     Build the full workbook and return its bytes.
-    Keys of `x`: year_label, assumptions, dcf_proj, dcf_bridge, dcf_sens, tranches, sources_uses,
-    debt_schedule, credit, summary, waterfall, ppa, contribution, projection, heat, mc_params,
-    mc_stats, mc_hist, mc_sim.
+    Keys of `x`: year_label, assumptions, dcf_proj, dcf_bridge, dcf_sens, comps, precedents, football,
+    multiples, target_multiples, tranches, sources_uses, debt_schedule, credit, summary, waterfall, ppa,
+    contribution, projection, heat, mc_params, mc_stats, mc_hist, mc_sim, mc_tornado.
     """
     pb = Pitchbook()
     wb = pb.wb
@@ -164,6 +164,37 @@ def build_pitchbook(x: dict) -> bytes:
     ch.set_title({"name": "Projected free cash flow (M)"})
     ch.set_size({"width": 560, "height": 300})
     ws.insert_chart(3, 8, ch)
+
+    # --- Relative valuation --------------------------------------------------------------
+    ws = pb.sheet("Valuation", "Relative valuation and football field",
+                  "Implied value per share = (multiple × Target LTM metric − net debt) / shares.")
+    r = pb.subtitle(ws, 3, "Football field (value per Target share)")
+    f0 = r
+    r = pb.frame(ws, r, x["football"], {"Low": "m2", "Mid": "m2", "High": "m2"})
+    r = pb.subtitle(ws, r, "Peer multiples (interquartile range)")
+    r = pb.table(ws, r, x["multiples"])
+    r = pb.table(ws, r, x["target_multiples"])
+    r = pb.subtitle(ws, r, "Trading comparables")
+    r = pb.frame(ws, r, x["comps"], {"EV/EBITDA": "x", "EV/Revenue": "x"})
+    if not x["precedents"].empty:
+        r = pb.subtitle(ws, r, "Precedent transactions")
+        pb.frame(ws, r, x["precedents"], {"EV/EBITDA": "x", "EV/Revenue": "x", "Year": "txt"})
+    n_ff = len(x["football"])
+    if n_ff:
+        ch = wb.add_chart({"type": "bar", "subtype": "stacked"})
+        cats = ["Valuation", f0 + 1, 0, f0 + n_ff, 0]
+        ch.add_series({"categories": cats, "values": ["Valuation", f0 + 1, 1, f0 + n_ff, 1],
+                       "fill": {"none": True}, "border": {"none": True}})
+        ws.write(f0, 6, "Range", pb.f_hdr)
+        for i in range(n_ff):
+            ws.write_formula(f0 + 1 + i, 6, f"=D{f0 + 2 + i}-B{f0 + 2 + i}", pb.f_num["m2"])
+        ch.add_series({"name": "Range", "categories": cats, "values": ["Valuation", f0 + 1, 6, f0 + n_ff, 6],
+                       "fill": {"color": NAVY}})
+        ch.set_title({"name": "Football field (per share)"})
+        ch.set_legend({"none": True})
+        ch.set_y_axis({"reverse": True})
+        ch.set_size({"width": 620, "height": 80 + 45 * n_ff})
+        ws.insert_chart(3, 8, ch)
 
     # --- Capital structure ---------------------------------------------------------------
     ws = pb.sheet("Capital Structure", "Capital structure and leverage risk",
@@ -205,14 +236,16 @@ def build_pitchbook(x: dict) -> bytes:
 
     # --- Monte Carlo ---------------------------------------------------------------------
     ws = pb.sheet("Monte Carlo", "Monte Carlo risk analysis",
-                  f"{N_SIM:,} draws from a normal distribution on captured synergies ({year}).")
+                  f"{N_SIM:,} draws ({year}): synergies, Target earnings, rate shock and integration overrun.")
     r = pb.subtitle(ws, 3, "Parameters and key result")
     r = pb.table(ws, r, x["mc_params"])
     r = pb.subtitle(ws, r, "Statistics")
     r = pb.frame(ws, r, x["mc_stats"], {"Pro-forma EPS": "eps", "Accretion / (dilution) %": "pct_s"})
     r = pb.subtitle(ws, r, "Pro-forma EPS distribution (histogram)")
     h0 = r
-    pb.frame(ws, r, x["mc_hist"], {"Pro-forma EPS (bin mid)": "eps", "Frequency": "m1"})
+    r = pb.frame(ws, r, x["mc_hist"], {"Pro-forma EPS (bin mid)": "eps", "Frequency": "m1"})
+    r = pb.subtitle(ws, r, "EPS tornado (±1 std. dev., one driver at a time)")
+    pb.frame(ws, r, x["mc_tornado"], {"1 std. dev.": "m2", "EPS low": "eps", "EPS high": "eps"})
     ch = wb.add_chart({"type": "column"})
     last = h0 + len(x["mc_hist"])
     ch.add_series({"name": "Frequency", "categories": ["Monte Carlo", h0 + 1, 0, last, 0],
@@ -222,7 +255,8 @@ def build_pitchbook(x: dict) -> bytes:
     ch.set_size({"width": 560, "height": 300})
     ws.insert_chart(3, 4, ch)
     ws.write(3, 12, "Individual draws", pb.f_sub)
-    pb.frame(ws, 4, x["mc_sim"], {"Simulated synergies (M)": "m2", "Pro-forma EPS": "eps"}, col=12)
-    ws.set_column(12, 14, 22)
+    pb.frame(ws, 4, x["mc_sim"], {"Simulated synergies (M)": "m2", "Target net income (M)": "m2",
+                                  "Rate shock": "pct", "Integration costs (M)": "m2", "Pro-forma EPS": "eps"}, col=12)
+    ws.set_column(12, 16, 22)
 
     return pb.close()

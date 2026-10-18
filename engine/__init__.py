@@ -10,9 +10,10 @@ Modules:
   utils      safe maths and the formatted-table convention shared with the Excel export
   dcf        Target DCF and WACC × g sensitivity
   deal       synergies, PPA, funding & debt schedule, pro-forma EPS, breakeven, ownership, leverage
-  analytics  accretion/dilution sensitivity grid and Monte Carlo
+  analytics  accretion/dilution sensitivity grid, multi-variable Monte Carlo, EPS tornado
+  valuation  trading comps / precedents implied values and the football field
 """
-from .analytics import run_montecarlo, sensitivity_matrix
+from .analytics import eps_tornado, run_montecarlo, sensitivity_matrix
 from .constants import (
     AMBER, DCF_YEARS, GREEN, GREY, LEVERAGE_LIMIT, LEVERAGE_WARN, MAX_M, MAX_PX, MAX_SH, MAX_SYN, N_SIM, NAVY,
     RED, STAT_LABELS, YEARS,
@@ -25,3 +26,4 @@ from .deal import (
 from .utils import (
     FMT_PY, ModelError, display_table, fmt_value, make_table, require, safe_div, safe_histogram,
 )
+from .valuation import MULTIPLES, football_field, implied_multiples, implied_price, multiple_stats
