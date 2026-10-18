@@ -39,6 +39,31 @@ def _series(df, row):
     return [float(v) for v in df.loc[row].dropna().tolist()]
 
 
+RATE_LIMIT_HINT = ("Yahoo Finance may be rate-limiting this server (common on shared cloud hosts): "
+                   "try again in a few minutes, or run the app locally.")
+
+
+def _try(fn, default=None):
+    """Call a yfinance accessor, returning `default` if it raises (blocked endpoint, rate limit...)."""
+    try:
+        out = fn()
+    except Exception:  # noqa: BLE001 - yfinance raises many unrelated exception types
+        return default
+    return default if out is None else out
+
+
+def _current_price(t, info: dict) -> float | None:
+    """Current price with fallbacks: quote summary → fast_info → last close of the past week."""
+    price = info.get("currentPrice") or info.get("regularMarketPrice") or info.get("previousClose")
+    if not price:
+        price = _try(lambda: t.fast_info["lastPrice"])
+    if not price:
+        hist = _try(lambda: t.history(period="5d", auto_adjust=False))
+        if hist is not None and not hist.empty:
+            price = float(hist["Close"].dropna().iloc[-1])
+    return float(price) if price else None
+
+
 def fetch_company(ticker: str) -> dict:
     """Download the latest annual fundamentals of `ticker`. Raises MarketDataError on failure."""
     try:
@@ -49,16 +74,14 @@ def fetch_company(ticker: str) -> dict:
     ticker = ticker.strip().upper()
     if not ticker:
         raise MarketDataError("Empty ticker.")
-    try:
-        t = yf.Ticker(ticker)
-        info = t.info or {}
-        inc, cf, bs = t.income_stmt, t.cashflow, t.balance_sheet
-    except Exception as exc:  # noqa: BLE001 - yfinance raises many unrelated exception types
-        raise MarketDataError(f"Could not download {ticker}: {exc}") from exc
-
-    price = info.get("currentPrice") or info.get("regularMarketPrice") or info.get("previousClose")
-    if not price or inc is None or inc.empty:
-        raise MarketDataError(f"No market data or financial statements found for {ticker}.")
+    t = yf.Ticker(ticker)
+    info = _try(lambda: t.info, {})
+    inc, cf, bs = _try(lambda: t.income_stmt), _try(lambda: t.cashflow), _try(lambda: t.balance_sheet)
+    if inc is None or inc.empty:
+        raise MarketDataError(f"No financial statements returned for {ticker}. Check the ticker. {RATE_LIMIT_HINT}")
+    price = _current_price(t, info)
+    if not price:
+        raise MarketDataError(f"No share price returned for {ticker}. {RATE_LIMIT_HINT}")
 
     m = 1e6
     revenue = _latest(inc, "Total Revenue")
@@ -104,9 +127,9 @@ def fetch_multiples(ticker: str, as_of: str | None = None) -> dict:
         import yfinance as yf
 
         t = yf.Ticker(ticker.strip().upper())
-        inc, bs = t.income_stmt, t.balance_sheet
+        inc, bs = _try(lambda: t.income_stmt), _try(lambda: t.balance_sheet)
         if inc is None or inc.empty:
-            raise MarketDataError(f"No financial statements found for {ticker}.")
+            raise MarketDataError(f"No financial statements returned for {ticker}. {RATE_LIMIT_HINT}")
         if as_of:
             when = pd.Timestamp(as_of)
             hist = t.history(start=when - pd.Timedelta(days=10), end=when + pd.Timedelta(days=1), auto_adjust=False)
@@ -115,10 +138,10 @@ def fetch_multiples(ticker: str, as_of: str | None = None) -> dict:
             price = float(hist["Close"].iloc[-1])
             col = min(inc.columns, key=lambda d: abs((pd.Timestamp(d).tz_localize(None) - when).days))
         else:
-            info = t.info or {}
-            price = info.get("currentPrice") or info.get("regularMarketPrice") or info.get("previousClose")
+            info = _try(lambda: t.info, {})
+            price = _current_price(t, info)
             col = inc.columns[0]
-        name = (t.info or {}).get("shortName", ticker) if not as_of else ticker.upper()
+        name = info.get("shortName", ticker.upper()) if not as_of else ticker.upper()
     except MarketDataError:
         raise
     except Exception as exc:  # noqa: BLE001
