@@ -2,8 +2,8 @@
 
 **An M&A accretion/dilution model with a DCF, purchase price allocation, debt schedule, trading comps, a football field and a multi-variable Monte Carlo, delivered as an interactive Streamlit app with a one-click Excel pitchbook.**
 
-[![Live demo](https://img.shields.io/badge/Live%20demo-Streamlit-FF4B4B?logo=streamlit&logoColor=white)](__LIVE_URL__)
-[![Tests](https://github.com/__REPO__/actions/workflows/tests.yml/badge.svg)](https://github.com/__REPO__/actions/workflows/tests.yml)
+[![Live demo](https://img.shields.io/badge/Live%20demo-Streamlit-FF4B4B?logo=streamlit&logoColor=white)](https://merger-synergy-calculator.streamlit.app)
+[![Tests](https://github.com/Thelegend2732/merger-synergy-calculator/actions/workflows/tests.yml/badge.svg)](https://github.com/Thelegend2732/merger-synergy-calculator/actions/workflows/tests.yml)
 ![Python](https://img.shields.io/badge/python-3.11%2B-blue)
 ![License](https://img.shields.io/badge/license-MIT-green)
 
@@ -99,7 +99,7 @@ Design choices worth noting:
 ## Run locally
 
 ```bash
-git clone https://github.com/__REPO__.git
+git clone https://github.com/Thelegend2732/merger-synergy-calculator.git
 cd merger-synergy-calculator
 pip install -r requirements.txt
 streamlit run app.py
