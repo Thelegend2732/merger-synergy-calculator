@@ -16,7 +16,9 @@ def app():
 
 def test_app_runs_without_exceptions(app):
     assert not app.exception
-    assert not app.error, [e.value for e in app.error]
+    # st.error is also used for model verdicts (e.g. "DILUTIVE"); only guarded() failures are bugs
+    crashes = [e.value for e in app.error if e.value.startswith("Error en")]
+    assert not crashes, crashes
 
 
 def test_pitchbook_export(app):

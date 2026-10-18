@@ -40,8 +40,9 @@ import streamlit as st
 from engine import (
     AMBER, GREEN, GREY, NAVY, RED,
     DCF_YEARS, LEVERAGE_LIMIT, LEVERAGE_WARN, MAX_M, MAX_PX, MAX_SH, MAX_SYN, N_SIM, STAT_LABELS, YEARS,
-    build_deal, dcf_sensitivity, dcf_valuation, display_table, fmt_value, leverage_metrics, make_table,
-    project_years, require, run_montecarlo, safe_div, sensitivity_matrix,
+    breakeven_synergies, build_deal, dcf_sensitivity, dcf_valuation, display_table, fmt_value, leverage_metrics,
+    make_table, max_premium_eps_neutral, ownership_contribution, project_years, require, run_montecarlo,
+    run_rate_synergies, safe_div, sensitivity_matrix,
 )
 from exporter import XLSX_AVAILABLE, build_pitchbook
 
@@ -187,6 +188,9 @@ with card(sb):
                              key="tgt_sh")
     tgt_px = st.number_input("Precio por acción actual", value=20.0, min_value=0.01, max_value=MAX_PX, step=0.5,
                              key="tgt_px")
+    tgt_book = st.number_input("Patrimonio neto contable (M)", value=600.0, min_value=-MAX_M, max_value=MAX_M,
+                               step=10.0, key="tgt_book",
+                               help="Valor en libros del equity del Target: base del Purchase Price Allocation.")
     st.caption("El beneficio neto del Target se deriva del DCF (pestaña Valoración DCF).")
 
 with card(sb):
@@ -205,9 +209,21 @@ with card(sb):
                                key="cost_syn")
     rev_syn = st.number_input("Sinergias de ingresos (M)", value=20.0, min_value=0.0, max_value=MAX_SYN, step=5.0,
                               key="rev_syn")
+    rev_syn_margin = st.number_input("Margen EBITDA de las sinergias de ingresos (%)", value=30.0, min_value=0.0,
+                                     max_value=100.0, step=1.0, key="rev_syn_mg",
+                                     help="Solo el margen de las ventas adicionales llega al beneficio.") / 100
     integration_costs = st.number_input("Costes de integración, one-time (M)", value=30.0, min_value=0.0,
                                         max_value=MAX_SYN, step=5.0, key="integ")
-total_syn = cost_syn + rev_syn
+    total_syn = run_rate_synergies(cost_syn, rev_syn, rev_syn_margin)
+    st.caption(f"Sinergias run-rate a nivel EBITDA: {cost_syn:,.1f} + {rev_syn:,.1f} × {rev_syn_margin:.0%} "
+               f"= **{total_syn:,.1f} M**")
+
+with card(sb):
+    st.markdown("**Purchase Price Allocation (PPA)**")
+    ppa_intang_pct = st.slider("% del exceso de precio asignado a intangibles", 0, 100, 30, 5, key="ppa_pct",
+                               help="Marcas, clientes, tecnología... Se amortizan; el resto del exceso es goodwill.") / 100
+    ppa_life = st.number_input("Vida útil de los intangibles (años)", value=10, min_value=1, max_value=40, step=1,
+                               key="ppa_life")
 
 with card(sb):
     st.markdown("**Faseo y año de análisis**")
@@ -226,7 +242,8 @@ yi = YEARS.index(year_sel)
 # Parámetros compartidos por todo el motor (las pestañas de DCF y Estructura de Capital los completan)
 P = dict(acq_ni=acq_ni, acq_sh=acq_sh, acq_px=acq_px, acq_ebitda=acq_ebitda, acq_netdebt=acq_netdebt,
          acq_cash=acq_cash, tgt_sh=tgt_sh, tgt_px=tgt_px, cash_w=cash_pct / 100, tax=tax,
-         total_syn=total_syn, integration=integration_costs, phases=phases)
+         total_syn=total_syn, integration=integration_costs, phases=phases,
+         tgt_book_equity=tgt_book, ppa_intang_pct=ppa_intang_pct, ppa_life=int(ppa_life))
 
 alerts_box = st.container()   # alertas globales: se rellena al final, visible desde cualquier pestaña
 tab_dcf, tab_cap, tab_sum, tab_sens, tab_mc = st.tabs([
@@ -386,7 +403,7 @@ with guarded(tab_dcf, "Valoración DCF"):
             z=dcf_sens.values, x=[f"{v:.1%}" for v in dcf_sens.columns], y=[f"{v:.1%}" for v in dcf_sens.index],
             colorscale=BLUE_SCALE, texttemplate="%{z:,.2f}",
             hovertemplate="g: %{x}<br>WACC: %{y}<br>Valor por acción: %{z:,.2f}<extra></extra>",
-            colorbar=dict(title="€/acción"),
+            colorbar=dict(title="Por acción"),
         ))
         sens_fig.update_layout(xaxis_title="Crecimiento a perpetuidad (g)", yaxis_title="WACC")
         style_fig(sens_fig, "Valor intrínseco por acción", height=420)
@@ -430,6 +447,16 @@ with guarded(tab_cap, "Estructura de Capital y Riesgo"):
                                           step=0.25, key="rate_sr") / 100
             mezz_rate = st.number_input("Tipo de interés Mezzanine (%)", value=10.0, min_value=0.0, max_value=40.0,
                                         step=0.25, key="rate_mz") / 100
+        f1, f2, f3 = st.columns(3)
+        senior_term = f1.number_input("Plazo de amortización Senior (años)", value=7, min_value=0, max_value=30,
+                                      step=1, key="sr_term",
+                                      help="Amortización lineal; 0 = bullet. La Mezzanine es siempre bullet.")
+        fee_adv = f2.number_input("Comisiones de asesoramiento (% del equity)", value=1.5, min_value=0.0,
+                                  max_value=10.0, step=0.25, key="fee_adv",
+                                  help="M&A advisory, legal, due diligence: gasto one-time, fuera del EPS recurrente.") / 100
+        fee_fin = f3.number_input("Comisiones de financiación (% de la deuda)", value=2.0, min_value=0.0,
+                                  max_value=10.0, step=0.25, key="fee_fin",
+                                  help="Se capitalizan y se amortizan durante el plazo Senior.") / 100
 
     # Validación: caja + senior no pueden superar el 100%; el resto es Mezzanine
     raw_total = cash_share + senior_share
@@ -441,7 +468,8 @@ with guarded(tab_cap, "Estructura de Capital y Riesgo"):
     cap_mezz = max(0.0, 1.0 - cap_cash - cap_senior)
 
     P.update(cap_cash=cap_cash, cap_senior=cap_senior, cap_mezz=cap_mezz,
-             rate_senior=senior_rate, rate_mezz=mezz_rate, rate_cash=rate_cash)
+             rate_senior=senior_rate, rate_mezz=mezz_rate, rate_cash=rate_cash,
+             senior_term=int(senior_term), fee_adv=fee_adv, fee_fin=fee_fin)
 
     # La operación base se construye aquí, una vez conocidos el precio base y los tramos
     base_deal = build_deal(P, base_price, premium)
@@ -465,7 +493,7 @@ with guarded(tab_cap, "Estructura de Capital y Riesgo"):
     with dash_cap:
         card_title("Financiación de la operación")
         k1, k2, k3, k4, k5 = st.columns(5)
-        k1.metric("Efectivo a pagar", fmt_value(base_deal["cash"], "m1"))
+        k1.metric("Efectivo necesario (con comisiones)", fmt_value(base_deal["cash"], "m1"))
         k2.metric("Deuda nueva (Senior + Mezz)", fmt_value(base_deal["debt"], "m1"))
         k3.metric("Coste medio de la deuda", fmt_value(base_deal["avg_cost_debt"], "pct"))
         k4.metric("Intereses anuales (deuda)", fmt_value(base_deal["interest"], "m1"))
@@ -482,21 +510,34 @@ with guarded(tab_cap, "Estructura de Capital y Riesgo"):
                             base_deal["fin_cost"]],
     })
     eq = base_deal["equity_value"]
+    total_uses = eq + base_deal["adv_fees"] + base_deal["fin_fees"]
     su_rows = [
         ("Fuente", "Caja del balance", base_deal["cash_bs"]),
         ("Fuente", "Deuda Senior", base_deal["senior"]),
         ("Fuente", "Deuda Mezzanine", base_deal["mezz"]),
         ("Fuente", "Nuevas acciones emitidas", base_deal["stock"]),
-        ("Fuente", "Total fuentes", eq),
+        ("Fuente", "Total fuentes", base_deal["cash"] + base_deal["stock"]),
         ("Uso", "Compra del equity del Target", eq),
-        ("Uso", "Total usos", eq),
+        ("Uso", "Comisiones de asesoramiento", base_deal["adv_fees"]),
+        ("Uso", "Comisiones de financiación", base_deal["fin_fees"]),
+        ("Uso", "Total usos", total_uses),
     ]
     sources_uses = pd.DataFrame({
         "Tipo": [r[0] for r in su_rows],
         "Concepto": [r[1] for r in su_rows],
         "Importe (M)": [r[2] for r in su_rows],
-        "% del total": [safe_div(r[2], eq) for r in su_rows],
+        "% del total": [safe_div(r[2], total_uses) for r in su_rows],
     })
+    debt_schedule = make_table("Calendario de deuda (M)", YEARS, [
+        ("Saldo inicial Senior", base_deal["senior_beg"], "m1"),
+        ("Amortización Senior", -base_deal["senior_repay"], "m1"),
+        ("Saldo Mezzanine (bullet)", np.full(len(YEARS), base_deal["mezz"]), "m1"),
+        ("Intereses Senior", base_deal["int_senior_y"], "m1"),
+        ("Intereses Mezzanine", base_deal["int_mezz_y"], "m1"),
+        ("Coste de oportunidad de la caja", np.full(len(YEARS), base_deal["opp_cost"]), "m1"),
+        ("Amortización comisiones de financiación", base_deal["fee_amort_y"], "m1"),
+        ("Total cargo financiero pre-tax", base_deal["fin_cost_y"] + base_deal["fee_amort_y"], "m1"),
+    ])
 
     gap()
     t1, t2 = st.columns([1, 1], gap="medium")
@@ -515,6 +556,12 @@ with guarded(tab_cap, "Estructura de Capital y Riesgo"):
             sources_uses.drop(columns="Tipo").rename(columns={"% del total": "%"})
             .style.format({"Importe (M)": "{:,.1f}", "%": "{:.0%}"}, na_rep="–"),
             hide_index=True, **ST_DF)
+    gap()
+    with card():
+        card_title("Calendario de deuda y cargo financiero",
+                   f"Senior amortizable en {int(senior_term)} años (intereses sobre saldo inicial)"
+                   if senior_term else "Senior bullet (sin amortización); comisiones de financiación en el Año 1.")
+        show_table(debt_schedule)
 
     st.divider()
     st.subheader("Riesgo de apalancamiento")
@@ -588,7 +635,10 @@ with guarded(tab_cap, "Estructura de Capital y Riesgo"):
 - **Coste de oportunidad de la caja** = caja propia usada × rendimiento perdido; se resta del beneficio pro-forma
   tras impuestos, igual que los intereses, de modo que la caja no sale «gratis».
 - La caja propia no puede superar la caja disponible del Acquirer (alerta en rojo si se excede).
-- No se modela la amortización de la deuda ni las comisiones de financiación.
+- **Comisiones**: las de asesoramiento se pagan al cierre y no entran en el EPS recurrente; las de financiación
+  (% de la deuda nueva) se capitalizan y se amortizan a lo largo del plazo Senior.
+- **Deuda Senior** amortizable linealmente (intereses sobre el saldo inicial de cada año); **Mezzanine** bullet.
+  El repago se financia con el cash flow de la combinada, por lo que el ratio Deuda Neta / EBITDA se muestra al cierre.
             """
         )
 
@@ -610,6 +660,9 @@ except Exception as exc:  # noqa: BLE001 - una pestaña previa falló: se inform
 with guarded(tab_sum, "Resumen de la Transacción"):
     require(model_ok, "el modelo no pudo calcularse; revisa las pestañas de DCF y Estructura de Capital.")
     label = "ACCRETIVE" if base["accretive"] else "DILUTIVE"
+    be = breakeven_synergies(P, base_deal, yi)
+    max_prem = max_premium_eps_neutral(P, base_price, yi)
+    oc = ownership_contribution(P, base_deal)
     gap()
     with card():
         card_title(f"Impacto en el EPS: {year_sel}",
@@ -632,6 +685,23 @@ with guarded(tab_sum, "Resumen de la Transacción"):
             st.error(f"La operación es **{label}**: el EPS cae {fmt_value(base['acc'], 'eps_s')} "
                      f"({fmt_value(base['acc_pct'], 'pct_s')}).")
 
+    gap()
+    with card():
+        card_title("Umbrales de la operación",
+                   f"{year_sel}: qué tendría que pasar para que la operación fuera EPS-neutral.")
+        b1, b2, b3, b4 = st.columns(4)
+        b1.metric("Sinergias breakeven (run-rate)", fmt_value(be["run_rate"], "m1"),
+                  delta=(fmt_value(be["cushion"], "m1") + " de colchón") if np.isfinite(be["cushion"]) else None,
+                  help="Sinergias run-rate pre-tax mínimas para que el EPS pro-forma iguale al standalone, "
+                       "con el faseo del año seleccionado.")
+        b2.metric("Prima máxima EPS-neutral", fmt_value(max_prem, "pct"),
+                  delta=fmt_value(max_prem - premium, "pct_s") + " vs. prima actual" if np.isfinite(max_prem) else None,
+                  help="Prima más alta sobre el precio base que mantiene la operación sin dilución.")
+        b3.metric("Propiedad pro-forma: Acquirer", fmt_value(oc["own_acq"], "pct"))
+        b4.metric("Propiedad pro-forma: Target", fmt_value(oc["own_tgt"], "pct"))
+        if not np.isfinite(max_prem):
+            st.caption("La operación es dilutiva incluso sin prima: no existe una prima EPS-neutral.")
+
     implied_premium = safe_div(base_deal["offer_price"], tgt_px) - 1
     summary = make_table("Métrica", ["Valor"], [
         ("Año de análisis", year_sel, "txt"),
@@ -639,15 +709,22 @@ with guarded(tab_sum, "Resumen de la Transacción"):
         ("Offer Price por acción", base_deal["offer_price"], "m2"),
         ("Prima implícita vs. precio de mercado", implied_premium, "pct_s"),
         ("Deal Equity Value (M)", base_deal["equity_value"], "m1"),
-        ("Cash Consideration / Cash Needed (M)", base_deal["cash"], "m1"),
+        ("Enterprise Value implícito (M)", base_deal["equity_value"] + tgt_netdebt, "m1"),
+        ("EV / EBITDA LTM implícito", safe_div(base_deal["equity_value"] + tgt_netdebt, P["tgt_ebitda"]), "x"),
+        ("Cash Consideration (M)", base_deal["cash_consid"], "m1"),
         ("Stock Consideration (M)", base_deal["stock"], "m1"),
+        ("Comisiones de asesoramiento (M)", base_deal["adv_fees"], "m1"),
+        ("Comisiones de financiación (M)", base_deal["fin_fees"], "m1"),
+        ("Cash Needed total (M)", base_deal["cash"], "m1"),
         ("New Shares Issued (M)", base_deal["new_shares"], "m2"),
+        ("Exchange ratio (acciones Acquirer por acción Target)", base_deal["exchange_ratio"], "eps"),
         ("Caja propia utilizada (M)", base_deal["cash_bs"], "m1"),
         ("Deuda Senior (M)", base_deal["senior"], "m1"),
         ("Deuda Mezzanine (M)", base_deal["mezz"], "m1"),
-        ("Interest Expense deuda (M)", base_deal["interest"], "m1"),
+        ("Interest Expense deuda del año (M)", base_deal["interest_y"][yi], "m1"),
         ("Coste de oportunidad de la caja (M)", base_deal["opp_cost"], "m1"),
-        ("Coste medio de la deuda", base_deal["avg_cost_debt"], "pct"),
+        ("Amortización comisiones de financiación (M)", base_deal["fee_amort_y"][yi], "m1"),
+        ("Amortización intangibles PPA (M)", base_deal["ppa_amort"], "m1"),
         ("% de sinergias capturadas", phases[yi], "pct"),
         ("Sinergias capturadas pre-tax (M)", cur_syn, "m1"),
         ("Costes de integración (M)", cur_integ, "m1"),
@@ -656,27 +733,34 @@ with guarded(tab_sum, "Resumen de la Transacción"):
         ("Pro-Forma Shares Outstanding (M)", base["pf_shares"], "m2"),
         ("Standalone EPS", base["sa_eps"], "eps"),
         ("Pro-Forma EPS", base["pf_eps"], "eps"),
-        ("Accretion / Dilution ($)", base["acc"], "eps_s"),
+        ("Accretion / Dilution (por acción)", base["acc"], "eps_s"),
         ("Accretion / Dilution (%)", base["acc_pct"], "pct_s"),
+        ("Sinergias breakeven run-rate (M)", be["run_rate"], "m1"),
+        ("Prima máxima EPS-neutral", max_prem, "pct"),
     ])
 
     # Waterfall: pasos sobre las acciones originales; el último recoge la dilución por nuevas acciones
     tax_f = 1 - tax
-    step_target = safe_div(cur_tni, acq_sh, 0.0)
-    step_syn = safe_div(cur_syn * tax_f, acq_sh, 0.0)
-    step_integ = -safe_div(cur_integ * tax_f, acq_sh, 0.0)
-    step_sr = -safe_div(base_deal["int_senior"] * tax_f, acq_sh, 0.0)
-    step_mz = -safe_div(base_deal["int_mezz"] * tax_f, acq_sh, 0.0)
-    step_opp = -safe_div(base_deal["opp_cost"] * tax_f, acq_sh, 0.0)
-    eps_pre_dilution = base["sa_eps"] + step_target + step_syn + step_integ + step_sr + step_mz + step_opp
-    step_dil = base["pf_eps"] - eps_pre_dilution
 
-    wf_labels = ["EPS Standalone", "Beneficio Target (DCF)", "Sinergias (post-tax)", "Costes integración (post-tax)",
-                 "Intereses Senior (post-tax)", "Intereses Mezzanine (post-tax)", "Coste oportunidad caja (post-tax)",
-                 "Dilución por nuevas acciones", "EPS Pro-Forma"]
-    wf_values = [base["sa_eps"], step_target, step_syn, step_integ, step_sr, step_mz, step_opp, step_dil,
-                 base["pf_eps"]]
-    wf_measures = ["absolute"] + ["relative"] * 7 + ["total"]
+    def per_share(v: float) -> float:
+        return safe_div(v * tax_f, acq_sh, 0.0)
+
+    wf_steps = [
+        ("Beneficio Target (DCF)", safe_div(cur_tni, acq_sh, 0.0)),
+        ("Sinergias (post-tax)", per_share(cur_syn)),
+        ("Costes integración (post-tax)", -per_share(cur_integ)),
+        ("Intereses Senior (post-tax)", -per_share(base_deal["int_senior_y"][yi])),
+        ("Intereses Mezzanine (post-tax)", -per_share(base_deal["int_mezz_y"][yi])),
+        ("Coste oportunidad caja (post-tax)", -per_share(base_deal["opp_cost"])),
+        ("Amort. comisiones financiación (post-tax)", -per_share(base_deal["fee_amort_y"][yi])),
+        ("Amort. intangibles PPA (post-tax)", -per_share(base_deal["ppa_amort"])),
+    ]
+    eps_pre_dilution = base["sa_eps"] + sum(v for _, v in wf_steps)
+    wf_steps.append(("Dilución por nuevas acciones", base["pf_eps"] - eps_pre_dilution))
+
+    wf_labels = ["EPS Standalone", *[lb for lb, _ in wf_steps], "EPS Pro-Forma"]
+    wf_values = [base["sa_eps"], *[v for _, v in wf_steps], base["pf_eps"]]
+    wf_measures = ["absolute"] + ["relative"] * len(wf_steps) + ["total"]
     waterfall_tbl = make_table("Paso", ["EPS"], [(lb, v, "eps" if m != "relative" else "eps_s")
                                                   for lb, v, m in zip(wf_labels, wf_values, wf_measures)])
 
@@ -698,6 +782,47 @@ with guarded(tab_sum, "Resumen de la Transacción"):
     with right, card():
         show_chart(wf)
 
+    # --- PPA y contribución ---
+    ppa_tbl = make_table("Purchase Price Allocation (M)", ["Valor"], [
+        ("Precio pagado por el equity", base_deal["equity_value"], "m1"),
+        ("(−) Patrimonio neto contable del Target", -base_deal["book_equity"], "m1"),
+        ("Exceso del precio sobre valor contable", base_deal["excess"], "m1"),
+        ("(−) Intangibles identificables", -base_deal["intangibles"], "m1"),
+        ("(+) Pasivo por impuesto diferido (DTL)", base_deal["dtl"], "m1"),
+        ("Goodwill", base_deal["goodwill"], "m1"),
+        ("Goodwill como % del precio", safe_div(base_deal["goodwill"], base_deal["equity_value"]), "pct"),
+        ("Amortización anual de intangibles", base_deal["ppa_amort"], "m1"),
+    ])
+    contribution = make_table("Contribución vs. propiedad", ["Acquirer", "Target"], [
+        ("EBITDA", list(oc["ebitda"]), "pct"),
+        ("Beneficio neto (Año 1)", list(oc["net_income"]), "pct"),
+        ("Capitalización bursátil", list(oc["market_cap"]), "pct"),
+        ("Propiedad pro-forma", [oc["own_acq"], oc["own_tgt"]], "pct"),
+    ])
+    contrib_labels = ["EBITDA", "Beneficio neto (Año 1)", "Capitalización", "Propiedad pro-forma"]
+    contrib_acq = [oc["ebitda"][0], oc["net_income"][0], oc["market_cap"][0], oc["own_acq"]]
+    contrib_fig = go.Figure()
+    contrib_fig.add_trace(go.Bar(y=contrib_labels, x=contrib_acq, name="Acquirer", orientation="h",
+                                 marker_color=NAVY, text=[fmt_value(v, "pct") for v in contrib_acq],
+                                 textposition="inside"))
+    contrib_fig.add_trace(go.Bar(y=contrib_labels, x=[1 - v for v in contrib_acq], name="Target",
+                                 orientation="h", marker_color=GREY,
+                                 text=[fmt_value(1 - v, "pct") for v in contrib_acq], textposition="inside"))
+    contrib_fig.update_layout(barmode="stack", xaxis_tickformat=".0%", xaxis_range=[0, 1],
+                              yaxis_autorange="reversed",
+                              legend=dict(orientation="h", y=1.15, x=1, xanchor="right", traceorder="normal"))
+    style_fig(contrib_fig, "Análisis de contribución vs. propiedad pro-forma", height=360)
+
+    st.divider()
+    pl, pr = st.columns([2, 3], gap="medium")
+    with pl, card():
+        card_title("Purchase Price Allocation", "Goodwill = precio − valor contable − intangibles + DTL.")
+        show_table(ppa_tbl)
+    with pr, card():
+        show_chart(contrib_fig)
+        st.caption("Si la propiedad que reciben los accionistas del Target es inferior a lo que aportan, "
+                   "la operación transfiere valor al Acquirer (y viceversa).")
+
     st.divider()
     with st.expander("Ver metodología y fórmulas"):
         st.markdown(
@@ -705,11 +830,19 @@ with guarded(tab_sum, "Resumen de la Transacción"):
 - **Offer Price** = Precio base del Target (DCF o mercado) × (1 + Prima)
 - **Deal Equity Value** = Offer Price × Acciones Target
 - **Nuevas acciones** = Stock Consideration / Precio Acquirer
-- **Coste financiero** = Senior × tipo Senior + Mezzanine × tipo Mezzanine + Caja propia × coste de oportunidad
+- **Sinergias run-rate** = Sinergias de costes + Sinergias de ingresos × margen EBITDA
+- **Coste financiero** = intereses Senior (saldo amortizable) + intereses Mezzanine + Caja propia × coste de oportunidad
+  \\+ amortización de comisiones de financiación
+- **PPA**: Exceso = Precio − valor contable; Intangibles = % del exceso (amortizables); DTL = Intangibles × t;
+  Goodwill = Exceso − Intangibles + DTL (no amortizable)
 - **Beneficio del Target** = (EBIT − intereses de su deuda neta) × (1 − t), derivado del DCF para cada año
-- **Pro-Forma NI** = NI Acquirer + NI Target(DCF) + (Sinergias capturadas − Costes integración)·(1 − t) − Coste financiero·(1 − t)
+- **Pro-Forma NI** = NI Acquirer + NI Target(DCF) + (Sinergias capturadas − Costes integración − Coste financiero
+  − Amortización intangibles)·(1 − t)
 - **Pro-Forma EPS** = Pro-Forma NI / (Acciones Acquirer + Nuevas acciones)
 - **Accretion / Dilution** = Pro-Forma EPS − Standalone EPS
+- **Sinergias breakeven**: sinergias que igualan Pro-Forma EPS y Standalone EPS (solución cerrada, el NI es lineal
+  en las sinergias). **Prima máxima EPS-neutral**: por bisección sobre la prima.
+- Las comisiones de asesoramiento son un gasto one-time de cierre y se excluyen del EPS recurrente.
             """
         )
 
@@ -735,11 +868,13 @@ with guarded(tab_sens, "Proyecciones y Sensibilidad"):
         ("Sinergias capturadas pre-tax (M)", [p_[0] for p_ in proj], "m1"),
         ("Costes de integración (M)", [p_[1] for p_ in proj], "m1"),
         ("Beneficio neto del Target — DCF (M)", [p_[2] for p_ in proj], "m1"),
+        ("Cargo financiero pre-tax (M)", base_deal["fin_cost_y"] + base_deal["fee_amort_y"], "m1"),
+        ("Amortización intangibles PPA (M)", [base_deal["ppa_amort"]] * len(YEARS), "m1"),
         ("Pro-Forma Net Income (M)", [p_[3]["pf_ni"] for p_ in proj], "m1"),
         ("Pro-Forma Shares (M)", [p_[3]["pf_shares"] for p_ in proj], "m2"),
         ("Standalone EPS", [p_[3]["sa_eps"] for p_ in proj], "eps"),
         ("Pro-Forma EPS", [p_[3]["pf_eps"] for p_ in proj], "eps"),
-        ("Accretion / Dilution ($)", [p_[3]["acc"] for p_ in proj], "eps_s"),
+        ("Accretion / Dilution (por acción)", [p_[3]["acc"] for p_ in proj], "eps_s"),
         ("Accretion / Dilution (%)", [p_[3]["acc_pct"] for p_ in proj], "pct_s"),
         ("Resultado", ["Accretive" if p_[3]["accretive"] else "Dilutive" for p_ in proj], "txt"),
     ])
@@ -779,7 +914,7 @@ with guarded(tab_sens, "Proyecciones y Sensibilidad"):
         heat.add_shape(type="rect", xref="x", yref="y",
                        x0=n_x // 2 - 0.5, x1=n_x // 2 + 0.5, y0=n_y // 2 - 0.5, y1=n_y // 2 + 0.5,
                        line=dict(color=NAVY, width=3))
-    heat.update_layout(xaxis_title="Sinergias totales run-rate (M)", yaxis_title="Prima sobre precio base")
+    heat.update_layout(xaxis_title="Sinergias run-rate pre-tax (M)", yaxis_title="Prima sobre precio base")
     style_fig(heat, f"Accretion / Dilution del EPS, {year_sel}", height=520)
 
     col_h, col_n = st.columns([3, 1], gap="medium")
@@ -787,7 +922,7 @@ with guarded(tab_sens, "Proyecciones y Sensibilidad"):
         show_chart(heat)
     with col_n, card():
         card_title("Cómo leer la matriz")
-        st.caption("Eje X: sinergias totales run-rate (±50% del valor introducido).")
+        st.caption("Eje X: sinergias run-rate a nivel EBITDA (±50% del caso base).")
         st.caption("Eje Y: prima sobre el precio base (±20% del valor introducido).")
         st.caption("Verde = accretive; rojo = dilutive. El recuadro marca el caso base, que coincide con el Resumen.")
         if fallback:
@@ -893,6 +1028,9 @@ with guarded(alerts_box, "Alertas del modelo"):
         if base_deal["cash_bs"] > acq_cash + 1e-9:
             st.error(f"**Caja insuficiente**: la operación usa {base_deal['cash_bs']:,.1f} M de caja propia y el "
                      f"Acquirer dispone de {acq_cash:,.1f} M.")
+        if base_deal["bargain"]:
+            st.warning(f"**Goodwill negativo** ({base_deal['goodwill']:,.1f} M): el precio es inferior al valor "
+                       "contable del Target (bargain purchase). Revisa el patrimonio neto contable o el precio.")
         alert_lev = leverage_metrics(P, base_deal, 0.0)["lev_pf"]   # criterio conservador, independiente de la pestaña 2
         if not pd.isna(alert_lev) and alert_lev > LEVERAGE_LIMIT:
             st.error(f"**Apalancamiento pro-forma {alert_lev:.2f}x** > {LEVERAGE_LIMIT:.1f}x: riesgo de rebaja de rating.")
@@ -922,6 +1060,8 @@ def collect_pitchbook_tables() -> dict:
         ("Pago en acciones", 1 - cash_pct / 100, "pct"), ("Tasa impositiva", tax, "pct"),
         ("SINERGIAS Y ANÁLISIS", "", "txt"),
         ("Sinergias de costes (M)", cost_syn, "m1"), ("Sinergias de ingresos (M)", rev_syn, "m1"),
+        ("Margen EBITDA de las sinergias de ingresos", rev_syn_margin, "pct"),
+        ("Sinergias run-rate a nivel EBITDA (M)", total_syn, "m1"),
         ("Costes de integración (M)", integration_costs, "m1"),
         ("Faseo Año 1", phases[0], "pct"), ("Faseo Año 2", phases[1], "pct"), ("Faseo Año 3", phases[2], "pct"),
         ("Año de análisis", year_sel, "txt"),
@@ -935,10 +1075,18 @@ def collect_pitchbook_tables() -> dict:
         ("% Caja", cap_cash, "pct"), ("% Deuda Senior", cap_senior, "pct"), ("% Deuda Mezzanine", cap_mezz, "pct"),
         ("Coste de oportunidad de la caja", rate_cash, "pct"),
         ("Tipo Senior", senior_rate, "pct"), ("Tipo Mezzanine", mezz_rate, "pct"),
+        ("Plazo de amortización Senior (años)", str(int(senior_term)), "txt"),
+        ("Comisiones de asesoramiento (% del equity)", fee_adv, "pct"),
+        ("Comisiones de financiación (% de la deuda)", fee_fin, "pct"),
+        ("PPA", "", "txt"),
+        ("Patrimonio neto contable del Target (M)", tgt_book, "m1"),
+        ("% del exceso asignado a intangibles", ppa_intang_pct, "pct"),
+        ("Vida útil de los intangibles (años)", str(int(ppa_life)), "txt"),
     ])
     return dict(
         year_label=year_sel, assumptions=assumptions, dcf_proj=dcf_proj, dcf_bridge=dcf_bridge,
-        dcf_sens=dcf_sens, tranches=tranches, sources_uses=sources_uses, credit=credit, summary=summary,
+        dcf_sens=dcf_sens, tranches=tranches, sources_uses=sources_uses, debt_schedule=debt_schedule,
+        credit=credit, summary=summary, ppa=ppa_tbl, contribution=contribution,
         waterfall=waterfall_tbl, projection=projection, heat=heat_df, mc_params=mc_params,
         mc_stats=mc_stats_x, mc_hist=mc_hist, mc_sim=mc_sim,
     )

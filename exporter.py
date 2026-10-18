@@ -116,7 +116,7 @@ def build_pitchbook(x: dict) -> bytes:
     """
     Genera el Excel completo y devuelve sus bytes.
     Claves de `x`: year_label, assumptions, dcf_proj, dcf_bridge, dcf_sens, tranches, sources_uses,
-    credit, summary, waterfall, projection, heat, mc_params, mc_stats, mc_hist, mc_sim.
+    debt_schedule, credit, summary, ppa, contribution, waterfall, projection, heat, mc_params, mc_stats, mc_hist, mc_sim.
     """
     pb = Pitchbook()
     wb = pb.wb
@@ -163,6 +163,8 @@ def build_pitchbook(x: dict) -> bytes:
                                         "Coste anual (M)": "m1"})
     r = pb.subtitle(ws, r, "Sources & Uses")
     r = pb.frame(ws, r, x["sources_uses"], {"Importe (M)": "m1", "% del total": "pct"})
+    r = pb.subtitle(ws, r, "Calendario de deuda y cargo financiero")
+    r = pb.table(ws, r, x["debt_schedule"])
     r = pb.subtitle(ws, r, "Métricas de crédito")
     pb.table(ws, r, x["credit"])
 
@@ -172,7 +174,11 @@ def build_pitchbook(x: dict) -> bytes:
     r = pb.subtitle(ws, 3, "Métricas de la operación")
     r = pb.table(ws, r, x["summary"])
     r = pb.subtitle(ws, r, "Puente del EPS (Standalone -> Pro-Forma)")
-    pb.table(ws, r, x["waterfall"])
+    r = pb.table(ws, r, x["waterfall"])
+    r = pb.subtitle(ws, r, "Purchase Price Allocation")
+    r = pb.table(ws, r, x["ppa"])
+    r = pb.subtitle(ws, r, "Contribución vs. propiedad pro-forma")
+    pb.table(ws, r, x["contribution"])
 
     # --- Sensibilidad --------------------------------------------------------------------
     ws = pb.sheet("Sensibilidad", "Proyecciones y matriz de sensibilidad",

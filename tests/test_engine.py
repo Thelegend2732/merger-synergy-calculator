@@ -96,3 +96,95 @@ def test_montecarlo_deterministic_and_zero_vol(params):
     flat = run_montecarlo(params, deal, 0, vol=0.0, seed=7, n_sim=500)
     base = project_years(params, deal)[0][3]
     np.testing.assert_allclose(flat["eps"], base["pf_eps"])
+
+
+# --- Phase 1: deal mechanics ---------------------------------------------------------------
+from engine import (  # noqa: E402
+    breakeven_synergies, max_premium_eps_neutral, ownership_contribution, purchase_price_allocation,
+    run_rate_synergies,
+)
+
+
+@pytest.fixture
+def full_params(params):
+    return {**params, "fee_adv": 0.015, "fee_fin": 0.02, "senior_term": 7,
+            "tgt_book_equity": 600.0, "ppa_intang_pct": 0.30, "ppa_life": 10}
+
+
+def test_revenue_synergies_flow_through_margin():
+    assert run_rate_synergies(60.0, 20.0, 0.30) == pytest.approx(66.0)
+
+
+def test_ppa_goodwill_identity(full_params):
+    ppa = purchase_price_allocation(full_params, equity_value=2080.0)
+    assert ppa["excess"] == pytest.approx(1480.0)
+    assert ppa["intangibles"] == pytest.approx(444.0)
+    assert ppa["dtl"] == pytest.approx(111.0)
+    assert ppa["goodwill"] == pytest.approx(1480.0 - 444.0 + 111.0)
+    assert ppa["ppa_amort"] == pytest.approx(44.4)
+    # Book equity + intangibles + goodwill - DTL reconciles to the purchase price
+    assert 600 + ppa["intangibles"] + ppa["goodwill"] - ppa["dtl"] == pytest.approx(2080.0)
+
+
+def test_bargain_purchase_flag(full_params):
+    ppa = purchase_price_allocation(full_params, equity_value=500.0)
+    assert ppa["intangibles"] == 0.0
+    assert ppa["bargain"]
+
+
+def test_fees_sources_equal_uses(full_params):
+    deal = build_deal(full_params, 20.0, 0.30)
+    uses = deal["cash_consid"] + deal["adv_fees"] + deal["fin_fees"]
+    assert deal["cash"] == pytest.approx(uses)
+    assert deal["cash_bs"] + deal["senior"] + deal["mezz"] == pytest.approx(uses)
+    assert deal["fin_fees"] == pytest.approx(0.02 * deal["debt"])
+
+
+def test_senior_amortization_schedule(full_params):
+    deal = build_deal(full_params, 20.0, 0.30)
+    s = deal["senior"]
+    np.testing.assert_allclose(deal["senior_beg"], [s, s * 6 / 7, s * 5 / 7])
+    np.testing.assert_allclose(deal["int_senior_y"], deal["senior_beg"] * 0.055)
+    assert deal["int_mezz_y"][0] == deal["int_mezz_y"][2]          # mezzanine is bullet
+    np.testing.assert_allclose(deal["fee_amort_y"], deal["fin_fees"] / 7)
+
+
+def test_ppa_amortization_reduces_eps(full_params):
+    no_ppa = {**full_params, "ppa_intang_pct": 0.0}
+    a = project_years(full_params, build_deal(full_params, 20.0, 0.30))[1][3]
+    b = project_years(no_ppa, build_deal(no_ppa, 20.0, 0.30))[1][3]
+    amort = build_deal(full_params, 20.0, 0.30)["ppa_amort"]
+    assert b["pf_ni"] - a["pf_ni"] == pytest.approx(amort * (1 - full_params["tax"]))
+
+
+@pytest.mark.parametrize("year", [0, 1, 2])
+def test_breakeven_synergies_make_deal_eps_neutral(full_params, year):
+    deal = build_deal(full_params, 20.0, 0.30)
+    be = breakeven_synergies(full_params, deal, year)
+    _, integ, tni, _ = project_years(full_params, deal)[year]
+    sc = scenario(full_params, deal, be["captured"], integ, tni, year)
+    assert sc["acc"] == pytest.approx(0.0, abs=1e-12)
+    assert be["run_rate"] == pytest.approx(be["captured"] / full_params["phases"][year])
+
+
+def test_max_premium_is_eps_neutral(full_params):
+    prem = max_premium_eps_neutral(full_params, 20.0, 2)
+    assert 0 < prem < 5
+    syn, integ, tni = project_years(full_params, build_deal(full_params, 20.0, prem))[2][:3]
+    sc = scenario(full_params, build_deal(full_params, 20.0, prem), syn, integ, tni, 2)
+    assert sc["acc"] == pytest.approx(0.0, abs=1e-4)
+
+
+def test_ownership_sums_to_one(full_params):
+    deal = build_deal(full_params, 20.0, 0.30)
+    oc = ownership_contribution(full_params, deal)
+    assert oc["own_acq"] + oc["own_tgt"] == pytest.approx(1.0)
+    assert sum(oc["ebitda"]) == pytest.approx(1.0)
+    all_cash = {**full_params, "cash_w": 1.0}
+    assert ownership_contribution(all_cash, build_deal(all_cash, 20.0, 0.3))["own_tgt"] == 0.0
+
+
+def test_montecarlo_matches_deterministic_with_full_mechanics(full_params):
+    deal = build_deal(full_params, 20.0, 0.30)
+    flat = run_montecarlo(full_params, deal, 1, vol=0.0, seed=1, n_sim=100)
+    np.testing.assert_allclose(flat["eps"], project_years(full_params, deal)[1][3]["pf_eps"])

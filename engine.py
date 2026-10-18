@@ -8,7 +8,8 @@ Contenido:
   1. Constantes compartidas (paleta, topes lógicos, horizontes)
   2. Utilidades numéricas y de tablas (safe_div, make_table, safe_histogram...)
   3. DCF (dcf_valuation, dcf_sensitivity)
-  4. Operación (build_deal, year_inputs, scenario, project_years, leverage_metrics)
+  4. Operación (run_rate_synergies, purchase_price_allocation, build_deal, year_inputs, scenario,
+     project_years, breakeven_synergies, max_premium_eps_neutral, ownership_contribution, leverage_metrics)
   5. Cálculos pesados, listos para cachear desde la UI (sensitivity_matrix, run_montecarlo)
 
 Convenciones: importes en millones, salvo precios y EPS. Todas las funciones son puras
@@ -195,31 +196,98 @@ def dcf_sensitivity(d: dict) -> pd.DataFrame:
 # ---------------------------------------------------------------------------
 # 4. Operación: estructura, escenarios y apalancamiento
 # ---------------------------------------------------------------------------
+def run_rate_synergies(cost_syn: float, rev_syn: float, rev_syn_margin: float) -> float:
+    """
+    Sinergias run-rate a nivel de EBITDA (pre-tax). Las sinergias de costes caen íntegras al
+    beneficio; las de ingresos solo aportan su margen (20 M de ventas extra no son 20 M de EBIT).
+    """
+    return cost_syn + rev_syn * rev_syn_margin
+
+
+def purchase_price_allocation(p: dict, equity_value: float) -> dict:
+    """
+    PPA simplificado. Exceso del precio sobre el valor contable del Target: una parte se asigna a
+    intangibles identificables (amortizables en `ppa_life` años), que generan un pasivo por impuesto
+    diferido (DTL = intangibles × t); el resto es goodwill (no amortizable, sujeto a test de deterioro).
+    Goodwill = precio − valor contable − intangibles + DTL. Si el precio es inferior al valor contable
+    no se asignan intangibles y el goodwill negativo indica una compra en condiciones ventajosas.
+    """
+    book = p.get("tgt_book_equity", 0.0)
+    excess = equity_value - book
+    intangibles = max(excess, 0.0) * p.get("ppa_intang_pct", 0.0)
+    dtl = intangibles * p["tax"]
+    goodwill = excess - intangibles + dtl
+    life = p.get("ppa_life", 0)
+    amort = safe_div(intangibles, life, default=0.0)
+    return dict(book_equity=book, excess=excess, intangibles=intangibles, dtl=dtl, goodwill=goodwill,
+                ppa_amort=amort, bargain=goodwill < 0)
+
+
 def build_deal(p: dict, base_price: float, premium: float) -> dict:
     """
     Estructura de la operación. El precio base del Target procede del DCF (o del mercado).
-    La parte en efectivo se financia con caja propia + Senior + Mezzanine (p['cap_*'] suman 1).
-    Coste financiero = intereses de la deuda + coste de oportunidad de la caja propia.
+
+    Usos de caja = contraprestación en efectivo + comisiones de asesoramiento (gasto one-time, fuera
+    del EPS) + comisiones de financiación (% de la deuda nueva, capitalizadas y amortizadas a lo largo
+    del plazo Senior). Se financian con caja propia + Senior + Mezzanine (p['cap_*'] suman 1). Como las
+    comisiones de financiación dependen de la propia deuda, el total se resuelve de forma cerrada:
+        U = (efectivo + asesoramiento) / (1 − f × %deuda)
+
+    Calendario de deuda (Años 1..3): Senior con amortización lineal en `senior_term` años e intereses
+    sobre el saldo inicial de cada año; Mezzanine bullet. Coste financiero anual = intereses + coste de
+    oportunidad de la caja propia; además se amortizan las comisiones de financiación y los intangibles
+    del PPA. Las cuatro partidas reducen el beneficio pro-forma tras impuestos.
     """
     offer_price = base_price * (1 + premium)
     equity_value = offer_price * p["tgt_sh"]
-    cash = equity_value * p["cash_w"]
-    stock = equity_value - cash
+    cash_consid = equity_value * p["cash_w"]
+    stock = equity_value - cash_consid
     new_shares = safe_div(stock, p["acq_px"], default=0.0)
 
+    adv_fees = equity_value * p.get("fee_adv", 0.0)
+    debt_share = p["cap_senior"] + p["cap_mezz"]
+    fin_fee_pct = p.get("fee_fin", 0.0)
+    cash = (cash_consid + adv_fees) / (1 - fin_fee_pct * debt_share)   # fin_fee_pct < 1 por los topes del input
     cash_bs = cash * p["cap_cash"]
     senior = cash * p["cap_senior"]
     mezz = cash * p["cap_mezz"]
-    int_senior = senior * p["rate_senior"]
-    int_mezz = mezz * p["rate_mezz"]
-    opp_cost = cash_bs * p["rate_cash"]
+    fin_fees = (senior + mezz) * fin_fee_pct
     debt = senior + mezz
-    interest = int_senior + int_mezz
+
+    # Calendario de deuda a 3 años
+    term = max(int(p.get("senior_term", 0)), 0)
+    n = len(YEARS)
+    yrs = np.arange(n)
+    if term > 0:
+        senior_beg = senior * np.clip(1 - yrs / term, 0.0, 1.0)
+        senior_repay = np.minimum(senior / term, senior_beg)
+        fee_amort = np.where(yrs < term, fin_fees / term, 0.0)
+    else:   # sin amortización: bullet, comisiones amortizadas en el Año 1
+        senior_beg = np.full(n, senior)
+        senior_repay = np.zeros(n)
+        fee_amort = np.where(yrs == 0, fin_fees, 0.0)
+    int_senior_y = senior_beg * p["rate_senior"]
+    int_mezz_y = np.full(n, mezz * p["rate_mezz"])
+    opp_cost = cash_bs * p["rate_cash"]
+    interest_y = int_senior_y + int_mezz_y
+    fin_cost_y = interest_y + opp_cost
+
+    ppa = purchase_price_allocation(p, equity_value)
+    # Partidas pre-tax que restan al beneficio pro-forma cada año
+    eps_costs_y = fin_cost_y + fee_amort + ppa["ppa_amort"]
+
     return dict(
         premium=premium, base_price=base_price, offer_price=offer_price, equity_value=equity_value,
-        cash=cash, stock=stock, new_shares=new_shares, cash_bs=cash_bs, senior=senior, mezz=mezz,
-        debt=debt, int_senior=int_senior, int_mezz=int_mezz, interest=interest, opp_cost=opp_cost,
-        fin_cost=interest + opp_cost, avg_cost_debt=safe_div(interest, debt),
+        cash_consid=cash_consid, adv_fees=adv_fees, fin_fees=fin_fees, cash=cash, stock=stock,
+        new_shares=new_shares, exchange_ratio=safe_div(new_shares, p["tgt_sh"], default=0.0),
+        cash_bs=cash_bs, senior=senior, mezz=mezz, debt=debt,
+        # Año 1 (compatibilidad con tablas de un solo periodo)
+        int_senior=float(int_senior_y[0]), int_mezz=float(int_mezz_y[0]), interest=float(interest_y[0]),
+        opp_cost=opp_cost, fin_cost=float(fin_cost_y[0]), avg_cost_debt=safe_div(float(interest_y[0]), debt),
+        # Calendario por año
+        senior_beg=senior_beg, senior_repay=senior_repay, int_senior_y=int_senior_y, int_mezz_y=int_mezz_y,
+        interest_y=interest_y, fin_cost_y=fin_cost_y, fee_amort_y=fee_amort, eps_costs_y=eps_costs_y,
+        **ppa,
     )
 
 
@@ -233,11 +301,21 @@ def year_inputs(p: dict, i: int) -> tuple:
     return syn, integ, p["tgt_ni_y"][i]
 
 
-def scenario(p: dict, deal: dict, synergies: float, integration: float, tgt_ni: float) -> dict:
+def pf_net_income(p: dict, deal: dict, year_idx: int, synergies, integration, tgt_ni):
+    """
+    Beneficio neto pro-forma del año `year_idx` (admite arrays de sinergias, p. ej. en Montecarlo):
+    NI Acquirer + NI Target + (sinergias − integración − coste financiero − amortización de comisiones
+    − amortización de intangibles PPA) × (1 − t).
+    """
+    tax = p["tax"]
+    return p["acq_ni"] + tgt_ni + (synergies - integration - deal["eps_costs_y"][year_idx]) * (1 - tax)
+
+
+def scenario(p: dict, deal: dict, synergies: float, integration: float, tgt_ni: float, year_idx: int = 0) -> dict:
     """EPS pro-forma y accretion/dilution para unas sinergias, integración y beneficio del Target dados."""
     tax = p["tax"]
-    fin_at = deal["fin_cost"] * (1 - tax)
-    pf_ni = p["acq_ni"] + tgt_ni + (synergies - integration) * (1 - tax) - fin_at
+    fin_at = deal["fin_cost_y"][year_idx] * (1 - tax)
+    pf_ni = pf_net_income(p, deal, year_idx, synergies, integration, tgt_ni)
     pf_shares = p["acq_sh"] + deal["new_shares"]
     sa_eps = safe_div(p["acq_ni"], p["acq_sh"])
     pf_eps = safe_div(pf_ni, pf_shares)
@@ -254,8 +332,65 @@ def project_years(p: dict, deal: dict) -> list:
     out = []
     for i in range(len(YEARS)):
         syn, integ, tni = year_inputs(p, i)
-        out.append((syn, integ, tni, scenario(p, deal, syn, integ, tni)))
+        out.append((syn, integ, tni, scenario(p, deal, syn, integ, tni, i)))
     return out
+
+
+def breakeven_synergies(p: dict, deal: dict, year_idx: int) -> dict:
+    """
+    Sinergias pre-tax necesarias en el año `year_idx` para que la operación sea EPS-neutral.
+    El beneficio pro-forma es lineal en las sinergias, así que se despeja de forma cerrada:
+        sinergias* = (EPS standalone × acciones PF − NI PF con sinergias = 0) / (1 − t)
+    Devuelve las sinergias capturadas necesarias y su equivalente run-rate (÷ % de faseo del año).
+    """
+    _, integ, tni = year_inputs(p, year_idx)
+    sa_eps = safe_div(p["acq_ni"], p["acq_sh"])
+    pf_shares = p["acq_sh"] + deal["new_shares"]
+    ni_zero = pf_net_income(p, deal, year_idx, 0.0, integ, tni)
+    captured = safe_div(sa_eps * pf_shares - ni_zero, 1 - p["tax"])
+    run_rate = safe_div(captured, p["phases"][year_idx])
+    return dict(captured=captured, run_rate=run_rate, cushion=p["total_syn"] - run_rate)
+
+
+def max_premium_eps_neutral(p: dict, base_price: float, year_idx: int, hi: float = 5.0, tol: float = 1e-6) -> float:
+    """
+    Prima máxima sobre el precio base que mantiene la operación EPS-neutral en `year_idx` (bisección).
+    NaN si la operación ya es dilutiva con prima 0; `hi` si sigue siendo accretive con la prima máxima.
+    """
+    def acc(prem: float) -> float:
+        syn, integ, tni = year_inputs(p, year_idx)
+        return scenario(p, build_deal(p, base_price, prem), syn, integ, tni, year_idx)["acc"]
+
+    lo_v = acc(0.0)
+    if pd.isna(lo_v) or lo_v < 0:
+        return np.nan
+    if acc(hi) >= 0:
+        return hi
+    lo = 0.0
+    while hi - lo > tol:
+        mid = (lo + hi) / 2
+        lo, hi = (mid, hi) if acc(mid) >= 0 else (lo, mid)
+    return lo
+
+
+def ownership_contribution(p: dict, deal: dict) -> dict:
+    """
+    Propiedad pro-forma (qué % de la empresa combinada queda en manos de cada base accionarial) frente a
+    la contribución de cada compañía en EBITDA, beneficio neto (Año 1) y capitalización bursátil.
+    Si los accionistas del Target reciben menos propiedad de la que aportan, la operación les es desfavorable.
+    """
+    pf_shares = p["acq_sh"] + deal["new_shares"]
+
+    def split(a: float, t: float) -> tuple:
+        tot = a + t
+        return safe_div(a, tot), safe_div(t, tot)
+
+    return dict(
+        own_acq=safe_div(p["acq_sh"], pf_shares), own_tgt=safe_div(deal["new_shares"], pf_shares),
+        ebitda=split(p["acq_ebitda"], p["tgt_ebitda"]),
+        net_income=split(p["acq_ni"], p["tgt_ni_y"][0]),
+        market_cap=split(p["acq_px"] * p["acq_sh"], p["tgt_px"] * p["tgt_sh"]),
+    )
 
 
 def leverage_metrics(p: dict, deal: dict, synergies_in_ebitda: float) -> dict:
@@ -301,7 +436,7 @@ def sensitivity_matrix(p: dict, base_price: float, premium: float, year_idx: int
     for iy, prem_val in enumerate(prem_axis):
         deal_iy = build_deal(p, base_price, prem_val)
         for ix, syn_val in enumerate(syn_axis):
-            z[iy, ix] = scenario(p, deal_iy, syn_val * phase, integ, tni)["acc_pct"]
+            z[iy, ix] = scenario(p, deal_iy, syn_val * phase, integ, tni, year_idx)["acc_pct"]
     return dict(z=z, syn_axis=syn_axis, prem_axis=prem_axis, fallback=fallback, n_x=n_x, n_y=n_y)
 
 
@@ -319,12 +454,11 @@ def run_montecarlo(p: dict, deal: dict, year_idx: int, vol: float, seed: int, n_
     reproduce exactamente np.random.seed + np.random.normal y no comparte estado entre sesiones.
     """
     cur_syn, cur_integ, cur_tni = year_inputs(p, year_idx)
-    tax = p["tax"]
     std = abs(cur_syn * vol)
 
     rs = np.random.RandomState(int(seed))
     syn_draws = rs.normal(loc=cur_syn, scale=std, size=n_sim)
-    pf_ni = p["acq_ni"] + cur_tni + (syn_draws - cur_integ) * (1 - tax) - deal["fin_cost"] * (1 - tax)
+    pf_ni = pf_net_income(p, deal, year_idx, syn_draws, cur_integ, cur_tni)
     pf_shares = p["acq_sh"] + deal["new_shares"]
     eps = pf_ni / pf_shares                          # acq_sh > 0 garantizado por los topes del input
     require(bool(np.all(np.isfinite(eps))), "la simulación produjo valores no finitos; revisa los inputs extremos.")
