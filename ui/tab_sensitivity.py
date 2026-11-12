@@ -11,6 +11,7 @@ from engine import GREEN, NAVY, RED, YEARS, fmt_value, make_table
 from .components import (
     HEAT_COLORSCALE, cached_sensitivity_matrix, card, card_title, gap, show_chart, show_table, style_fig,
 )
+from .theme import icon, metric, section
 
 
 def render(inp, base_price: float, deal: dict, model: dict) -> dict:
@@ -19,11 +20,11 @@ def render(inp, base_price: float, deal: dict, model: dict) -> dict:
     with card():
         card_title(f"{inp.eps_basis} accretion / (dilution) by year",
                    "Sidebar phasing: " + " · ".join(f"{y} {p_:.0%}" for y, p_ in zip(YEARS, inp.phases))
-                   + ". Integration costs fall in Year 1.")
+                   + ". Integration costs fall in Year 1.", "phasing")
         for col, yr, p_ in zip(st.columns(len(YEARS)), YEARS, proj):
             sc = p_[3]
-            col.metric(f"{yr}: pro-forma EPS", fmt_value(sc["pf_eps"], "eps"),
-                       delta=fmt_value(sc["acc_pct"], "pct_s"))
+            metric(col, f"{yr}: pro-forma EPS", fmt_value(sc["pf_eps"], "eps"),
+                   "accretive" if sc["accretive"] else "dilutive", delta=fmt_value(sc["acc_pct"], "pct_s"))
 
     projection = make_table("Line item", YEARS, [
         ("Synergies captured (%)", inp.phases, "pct"),
@@ -44,7 +45,7 @@ def render(inp, base_price: float, deal: dict, model: dict) -> dict:
     gap()
     col_t, col_c = st.columns([3, 2], gap="medium")
     with col_t, card():
-        card_title("Three-year projection")
+        card_title("Three-year projection", icon_key="table")
         show_table(projection)
     with col_c, card():
         acc_pcts = [p_[3]["acc_pct"] for p_ in proj]
@@ -58,7 +59,8 @@ def render(inp, base_price: float, deal: dict, model: dict) -> dict:
         show_chart(bar)
 
     st.divider()
-    st.subheader(f"Sensitivity grid: {inp.year_sel}")
+    section("sensitivity", f"Sensitivity grid: {inp.year_sel}",
+            "Premium × run-rate synergies. Green = accretive, red = dilutive; the outlined cell is the base case.")
 
     hm = cached_sensitivity_matrix(P, base_price, inp.premium, inp.yi)   # 63 cached scenarios
     z, syn_axis, prem_axis, fallback = hm["z"], hm["syn_axis"], hm["prem_axis"], hm["fallback"]
@@ -83,15 +85,16 @@ def render(inp, base_price: float, deal: dict, model: dict) -> dict:
     with col_h, card():
         show_chart(heat)
     with col_n, card():
-        card_title("How to read the grid")
+        card_title("How to read the grid", icon_key="help")
         st.caption("X axis: run-rate synergies at EBITDA level (±50% of the base case).")
         st.caption("Y axis: premium over the base price (±20% of the input).")
-        st.caption("Green = accretive; red = dilutive. The outlined cell is the base case and matches the Summary.")
+        st.caption("The outlined cell is the base case and matches the Summary tab.")
         if fallback:
             st.info("Synergies or premium are zero, so the grid uses absolute ranges "
-                    "(synergies 0–100 M; premium 0–20%).")
+                    "(synergies 0–100 M; premium 0–20%).", icon=icon("info"))
         st.divider()
-        st.metric("Base case", fmt_value(base["acc_pct"], "pct_s"))
-        st.caption(f"Premium {inp.premium:.0%} · Synergies {inp.total_syn:,.0f} M")
+        metric(st, "Base case", fmt_value(base["acc_pct"], "pct_s"),
+               "accretive" if base["accretive"] else "dilutive",
+               delta=f"Premium {inp.premium:.0%} · Synergies {inp.total_syn:,.0f} M", delta_arrow="off")
 
     return dict(projection=projection, heat=heat_df)

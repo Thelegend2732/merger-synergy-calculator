@@ -11,6 +11,12 @@ from marketdata.cases import BASIS_DCF, BASIS_MARKET
 
 from .cases import render_case_loader
 from .components import card
+from .theme import icon, section
+
+
+def _group(parent, icon_key: str, title: str, expanded: bool = True):
+    """Collapsible input group with an icon, so the sidebar reads as a form with sections."""
+    return parent.expander(title, expanded=expanded, icon=icon(icon_key))
 
 
 def render_sidebar() -> tuple:
@@ -20,13 +26,21 @@ def render_sidebar() -> tuple:
     `inputs.P` is the engine parameter dict; the DCF and capital structure tabs complete it.
     """
     sb = st.sidebar
-    export_box = card(sb)
     render_case_loader(sb)
-    sb.divider()
-    sb.header("Deal inputs")
+    export_box = card(sb)
 
+    with sb:
+        section("settings", "Analysis settings", "Drive the Summary, Sensitivity and Monte Carlo tabs.")
     with card(sb):
-        st.markdown("**Acquirer**")
+        year_sel = st.selectbox("Analysis year", YEARS, key="year")
+        eps_basis = st.radio("EPS basis", ["GAAP", "Adjusted"], key="eps_basis", horizontal=True,
+                             help="Adjusted excludes PPA amortisation and one-off integration costs, the "
+                                  "'cash EPS' view banks and acquirers usually quote for accretion.")
+
+    with sb:
+        section("inputs", "Deal inputs", "Millions, except per-share data.")
+
+    with _group(sb, "acquirer", "Acquirer"):
         acq_ni = st.number_input("Net income (M)", min_value=-MAX_M, max_value=MAX_M, step=10.0,
                                  key="acq_ni")
         acq_sh = st.number_input("Shares outstanding (M)", min_value=0.01, max_value=MAX_SH, step=1.0,
@@ -41,8 +55,7 @@ def render_sidebar() -> tuple:
                                    step=50.0, key="acq_cash",
                                    help="Cap on the balance sheet cash that can be used to pay the cash component.")
 
-    with card(sb):
-        st.markdown("**Target: market data**")
+    with _group(sb, "target", "Target: market data"):
         tgt_sh = st.number_input("Shares outstanding (M)", min_value=0.01, max_value=MAX_SH, step=1.0,
                                  key="tgt_sh")
         tgt_px = st.number_input("Current share price", min_value=0.01, max_value=MAX_PX, step=0.5,
@@ -50,20 +63,18 @@ def render_sidebar() -> tuple:
         tgt_book = st.number_input("Book value of equity (M)", min_value=-MAX_M, max_value=MAX_M,
                                    step=10.0, key="tgt_book",
                                    help="Target's book equity: the starting point of the purchase price allocation.")
-        st.caption("Target net income is derived from the DCF (DCF Valuation tab).")
+        st.caption(f"{icon('info')} Target net income is derived from the DCF (DCF Valuation tab).")
 
-    with card(sb):
-        st.markdown("**Consideration**")
+    with _group(sb, "consideration", "Consideration"):
         price_basis = st.radio("Target price basis", [BASIS_DCF, BASIS_MARKET], key="basis",
                                help="With DCF, the valuation's equity value sets the price the premium is applied to.")
         premium = st.slider("Premium over base price (%)", 0.0, 100.0, step=1.0, key="premium") / 100
         cash_pct = st.slider("Cash consideration (%)", 0, 100, step=5, key="cash_pct")
-        st.caption(f"Stock consideration: {100 - cash_pct}%")
+        st.progress(cash_pct / 100, text=f"Cash {cash_pct}% · Stock {100 - cash_pct}%")
         tax = st.number_input("Corporate tax rate (%)", min_value=0.0, max_value=100.0,
                               step=1.0, key="tax") / 100
 
-    with card(sb):
-        st.markdown("**Synergies (run-rate, pre-tax)**")
+    with _group(sb, "synergies", "Synergies (run-rate, pre-tax)"):
         cost_syn = st.number_input("Cost synergies (M)", min_value=0.0, max_value=MAX_SYN, step=5.0,
                                    key="cost_syn")
         rev_syn = st.number_input("Revenue synergies (M)", min_value=0.0, max_value=MAX_SYN, step=5.0,
@@ -74,31 +85,26 @@ def render_sidebar() -> tuple:
         integration = st.number_input("One-off integration costs (M)", min_value=0.0,
                                       max_value=MAX_SYN, step=5.0, key="integ")
         total_syn = run_rate_synergies(cost_syn, rev_syn, rev_syn_margin)
-        st.caption(f"Run-rate synergies at EBITDA level: {cost_syn:,.1f} + {rev_syn:,.1f} × {rev_syn_margin:.0%} "
-                   f"= **{total_syn:,.1f} M**")
+        st.metric("Run-rate synergies at EBITDA level", f"{total_syn:,.1f} M", border=True,
+                  icon=icon("synergies"),
+                  help=f"{cost_syn:,.1f} + {rev_syn:,.1f} × {rev_syn_margin:.0%}")
 
-    with card(sb):
-        st.markdown("**Purchase price allocation (PPA)**")
+    with _group(sb, "ppa", "Purchase price allocation (PPA)", expanded=False):
         ppa_intang_pct = st.slider("Excess price allocated to intangibles (%)", 0, 100, step=5, key="ppa_pct",
                                    help="Brands, customer relationships, technology... They are amortised; "
                                         "the rest of the excess is goodwill.") / 100
         ppa_life = st.number_input("Useful life of intangibles (years)", min_value=1, max_value=40, step=1,
                                    key="ppa_life")
 
-    with card(sb):
-        st.markdown("**Phasing and analysis year**")
-        st.caption("Share of run-rate synergies captured each year. Summary, Sensitivity and Monte Carlo use it.")
+    with _group(sb, "phasing", "Synergy phasing", expanded=False):
+        st.caption("Share of run-rate synergies captured each year.")
         phase_pct = [
             st.slider("Year 1 (%)", 0, 100, step=5, key="ph1"),
             st.slider("Year 2 (%)", 0, 100, step=5, key="ph2"),
             st.slider("Year 3 (%)", 0, 100, step=5, key="ph3"),
         ]
         if any(b < a for a, b in zip(phase_pct, phase_pct[1:])):
-            st.warning("Synergy capture should not decrease over time.")
-        year_sel = st.selectbox("Analysis year (Summary, Sensitivity, Monte Carlo)", YEARS, key="year")
-        eps_basis = st.radio("EPS basis", ["GAAP", "Adjusted"], key="eps_basis", horizontal=True,
-                             help="Adjusted excludes PPA amortisation and one-off integration costs, the "
-                                  "'cash EPS' view banks and acquirers usually quote for accretion.")
+            st.warning("Synergy capture should not decrease over time.", icon=icon("warn"))
 
     phases = [v / 100 for v in phase_pct]
     P = dict(acq_ni=acq_ni, acq_sh=acq_sh, acq_px=acq_px, acq_ebitda=acq_ebitda, acq_netdebt=acq_netdebt,

@@ -30,7 +30,8 @@ def test_pitchbook_export(app):
 
 
 def test_every_tab_renders(app):
-    labels = [t.label for t in app.tabs]
+    # Labels carry a leading Material icon directive (":material/...: Name"); compare the names only
+    labels = [t.label.split(": ", 1)[-1] for t in app.tabs]
     assert labels == ["DCF Valuation", "Comps & Football Field", "Capital Structure & Risk",
                       "Transaction Summary", "Projections & Sensitivity", "Monte Carlo Risk"]
     for tab in app.tabs:

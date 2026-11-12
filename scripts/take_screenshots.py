@@ -26,7 +26,7 @@ def settle(page, ms: int = 2500) -> None:
 
 
 def open_tab(page, name: str) -> None:
-    page.get_by_role("tab", name=name).click()
+    page.get_by_role("tab").filter(has_text=name).first.click()   # labels start with an icon
     settle(page, 1500)
 
 
@@ -41,7 +41,7 @@ def main() -> None:
         browser = pw.chromium.launch(channel="msedge", headless=True, args=["--lang=en-US"])
         page = browser.new_page(viewport={"width": 1440, "height": 900}, device_scale_factor=1.25, locale="en-US")
         page.goto(URL)
-        page.get_by_text("Merger Synergy Calculator").first.wait_for(timeout=60_000)
+        page.locator(".msc-header").first.wait_for(timeout=60_000)
         settle(page)
         page.add_style_tag(content='[data-testid="stToolbar"], [data-testid="stDecoration"] {display: none;} .modebar {display: none !important;}')
 
@@ -53,6 +53,7 @@ def main() -> None:
 
         open_tab(page, "Transaction Summary")
         page.screenshot(path=OUT / "summary.png")
+        page.locator(".msc-header").screenshot(path=OUT / "header.png")
         chart_with(page, "EPS bridge").screenshot(path=OUT / "eps_bridge.png")
         chart_with(page, "Contribution analysis").screenshot(path=OUT / "contribution.png")
 

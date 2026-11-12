@@ -12,6 +12,7 @@ from engine import (
 )
 
 from .components import ST_DF, card, card_title, gap, show_chart, show_table, style_fig
+from .theme import hero, icon, metric, section
 
 
 def render(inp, base_price: float) -> dict:
@@ -24,7 +25,7 @@ def render(inp, base_price: float) -> dict:
     with col_in, card():
         card_title("Funding the cash component",
                    "Cash is funded with balance sheet cash and two debt tranches; the stock component with new "
-                   "Acquirer shares.")
+                   "Acquirer shares.", "settings")
         a, b = st.columns(2)
         with a:
             cash_share = st.slider("Balance sheet cash (% of cash needed)", 0, 100, step=5, key="cap_cash")
@@ -62,30 +63,33 @@ def render(inp, base_price: float) -> dict:
     acq_cash = P["acq_cash"]
 
     with col_side, card():
-        card_title("Resulting split")
-        st.metric("Subordinated / Mezzanine debt (remainder)", f"{cap_mezz:.0%}")
-        st.caption(f"Cash {cap_cash:.0%} · Senior {cap_senior:.0%} · Mezzanine {cap_mezz:.0%}")
+        card_title("Resulting split", "Of the cash needed, including fees.", "equity")
+        st.progress(cap_cash, text=f"Balance sheet cash · {cap_cash:.0%}")
+        st.progress(cap_senior, text=f"Senior debt · {cap_senior:.0%}")
+        st.progress(cap_mezz, text=f"Mezzanine (remainder) · {cap_mezz:.0%}")
         if raw_total > 100:
             st.error(f"Cash ({cash_share}%) + Senior ({senior_share}%) add up to {raw_total}%. "
-                     "They are rescaled proportionally to 100% (Mezzanine = 0%).")
+                     "They are rescaled proportionally to 100% (Mezzanine = 0%).", icon=icon("error"))
         if mezz_rate < senior_rate:
-            st.warning("The Mezzanine rate is below the Senior rate: subordinated debt normally pays more.")
+            st.warning("The Mezzanine rate is below the Senior rate: subordinated debt normally pays more.",
+                       icon=icon("warn"))
+        cash_use = safe_div(deal["cash_bs"], acq_cash, 0.0)
         if deal["cash_bs"] > acq_cash + 1e-9:
             st.error(f"Balance sheet cash required ({deal['cash_bs']:,.1f} M) exceeds the Acquirer's available "
-                     f"cash ({acq_cash:,.1f} M).")
+                     f"cash ({acq_cash:,.1f} M).", icon=icon("error"))
         else:
-            st.caption(f"Balance sheet cash used: {deal['cash_bs']:,.1f} M of {acq_cash:,.1f} M available "
-                       f"({safe_div(deal['cash_bs'], acq_cash, 0.0):.0%}).")
+            st.metric("Balance sheet cash used", f"{deal['cash_bs']:,.1f} M", border=True, icon=icon("cash"),
+                      delta=f"{cash_use:.0%} of {acq_cash:,.1f} M available", delta_arrow="off")
 
     with dash:
-        card_title("Deal funding")
+        card_title("Deal funding", "How the cash component is paid for and what it costs each year.", "capital")
         k1, k2, k3, k4, k5 = st.columns(5)
-        k1.metric("Cash needed (incl. fees)", fmt_value(deal["cash"], "m1"))
-        k2.metric("New debt (Senior + Mezz)", fmt_value(deal["debt"], "m1"))
-        k3.metric("Average cost of debt", fmt_value(deal["avg_cost_debt"], "pct"))
-        k4.metric("Annual interest (Year 1)", fmt_value(deal["interest"], "m1"))
-        k5.metric("Opportunity cost of cash", fmt_value(deal["opp_cost"], "m1"),
-                  help="Annual opportunity cost of the balance sheet cash used (M, pre-tax).")
+        metric(k1, "Cash needed (incl. fees)", fmt_value(deal["cash"], "m1"), "cash")
+        metric(k2, "New debt (Senior + Mezz)", fmt_value(deal["debt"], "m1"), "debt")
+        metric(k3, "Average cost of debt", fmt_value(deal["avg_cost_debt"], "pct"), "rate")
+        metric(k4, "Annual interest (Year 1)", fmt_value(deal["interest"], "m1"), "interest")
+        metric(k5, "Opportunity cost of cash", fmt_value(deal["opp_cost"], "m1"), "savings",
+               help="Annual opportunity cost of the balance sheet cash used (M, pre-tax).")
 
     cash_total = deal["cash"]
     tranches = pd.DataFrame({
@@ -129,13 +133,13 @@ def render(inp, base_price: float) -> dict:
     gap()
     t1, t2 = st.columns([1, 1], gap="medium")
     with t1, card():
-        card_title("Funding tranches")
+        card_title("Funding tranches", icon_key="table")
         st.dataframe(
             tranches.style.format({"Amount (M)": "{:,.1f}", "% of cash": "{:.1%}", "Rate / cost": "{:.2%}",
                                    "Annual cost (M)": "{:,.1f}"}, na_rep="–"),
             hide_index=True, **ST_DF)
     with t2, card():
-        card_title("Sources & uses")
+        card_title("Sources & uses", icon_key="balance")
         st.dataframe(
             sources_uses.drop(columns="Type").rename(columns={"% of total": "%"})
             .style.format({"Amount (M)": "{:,.1f}", "%": "{:.0%}"}, na_rep="–"),
@@ -144,11 +148,12 @@ def render(inp, base_price: float) -> dict:
     with card():
         card_title("Debt schedule and financing charge",
                    f"Senior amortises over {int(senior_term)} years (interest on opening balance)."
-                   if senior_term else "Senior is bullet (no amortisation); financing fees expensed in Year 1.")
+                   if senior_term else "Senior is bullet (no amortisation); financing fees expensed in Year 1.",
+                   "calendar_month")
         show_table(debt_schedule)
 
     st.divider()
-    st.subheader("Leverage risk")
+    section("leverage", "Leverage risk", "Net debt / EBITDA at closing versus the rating-agency comfort zones.")
     incl_syn = st.checkbox("Include run-rate synergies in pro-forma EBITDA", key="incl_syn",
                            help="Excluded by default (the conservative approach rating agencies take).")
     lev = leverage_metrics(P, deal, inp.total_syn if incl_syn else 0.0)
@@ -156,25 +161,26 @@ def render(inp, base_price: float) -> dict:
 
     with card():
         m1, m2, m3, m4 = st.columns(4)
-        m1.metric("Net debt / EBITDA standalone", fmt_value(lev["lev_sa"], "x"))
+        metric(m1, "Net debt / EBITDA standalone", fmt_value(lev["lev_sa"], "x"), "leverage")
         delta_lev = lev["lev_pf"] - lev["lev_sa"]
-        m2.metric("Net debt / EBITDA pro forma", fmt_value(lev["lev_pf"], "x"),
-                  delta=fmt_value(delta_lev, "x") if not pd.isna(delta_lev) else None, delta_color="inverse")
-        m3.metric("Pro-forma EBITDA (M)", fmt_value(lev["ebitda_pf"], "m1"))
-        m4.metric("EBITDA / new interest cover", fmt_value(lev["coverage"], "x"))
+        metric(m2, "Net debt / EBITDA pro forma", fmt_value(lev["lev_pf"], "x"), "leverage",
+               delta=fmt_value(delta_lev, "x") if not pd.isna(delta_lev) else None, delta_color="inverse")
+        metric(m3, "Pro-forma EBITDA (M)", fmt_value(lev["ebitda_pf"], "m1"), "income")
+        metric(m4, "EBITDA / new interest cover", fmt_value(lev["coverage"], "x"), "verified")
 
         if pd.isna(lp):
-            st.warning("Leverage cannot be computed: pro-forma EBITDA is not positive.")
+            st.warning("Leverage cannot be computed: pro-forma EBITDA is not positive.", icon=icon("warn"))
         elif lp > LEVERAGE_LIMIT:
-            st.error(f"Pro-forma net debt / EBITDA of **{lp:.2f}x**, above {LEVERAGE_LIMIT:.1f}x: high risk of a "
-                     "**credit rating downgrade** and leverage stress (covenants, refinancing cost). Consider more "
-                     "stock consideration or a lower premium.")
+            hero("bad", "Leverage at closing", f"{lp:.2f}x net debt / EBITDA",
+                 f"Above {LEVERAGE_LIMIT:.1f}x: high risk of a credit rating downgrade and leverage stress "
+                 "(covenants, refinancing cost). Consider more stock consideration or a lower premium.", "leverage")
         elif lp > LEVERAGE_WARN:
             st.warning(f"Pro-forma net debt / EBITDA of **{lp:.2f}x**: watch zone "
-                       f"({LEVERAGE_WARN:.1f}x–{LEVERAGE_LIMIT:.1f}x). No immediate stress, but little headroom.")
+                       f"({LEVERAGE_WARN:.1f}x–{LEVERAGE_LIMIT:.1f}x). No immediate stress, but little headroom.",
+                       icon=icon("warn"))
         else:
-            st.success(f"Pro-forma net debt / EBITDA of **{lp:.2f}x**: comfortable leverage "
-                       f"(< {LEVERAGE_WARN:.1f}x).")
+            hero("ok", "Leverage at closing", f"{lp:.2f}x net debt / EBITDA",
+                 f"Comfortable leverage, below the {LEVERAGE_WARN:.1f}x watch zone.", "ok")
 
     lev_fig = go.Figure()
     bar_color = GREY if pd.isna(lp) else (RED if lp > LEVERAGE_LIMIT else AMBER if lp > LEVERAGE_WARN else GREEN)
@@ -204,13 +210,13 @@ def render(inp, base_price: float) -> dict:
     gap()
     cl, cr = st.columns([2, 3], gap="medium")
     with cl, card():
-        card_title("Credit metrics")
+        card_title("Credit metrics", icon_key="table")
         show_table(credit)
     with cr, card():
         show_chart(lev_fig)
 
     st.divider()
-    with st.expander("Capital structure notes"):
+    with st.expander("Capital structure notes", icon=icon("method")):
         st.markdown(
             """
 - Cash paid out (balance sheet cash + new debt) **increases net debt** by the same amount, so the split between

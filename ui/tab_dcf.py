@@ -8,6 +8,7 @@ import streamlit as st
 from engine import DCF_YEARS, GREEN, GREY, MAX_M, NAVY, RED, YEARS, dcf_valuation, fmt_value, make_table, safe_div
 
 from .components import BLUE_SCALE, cached_dcf_sensitivity, card, card_title, gap, show_chart, show_table, style_fig
+from .theme import hero, icon, kpi, metric
 
 
 def render(inp) -> dict:
@@ -19,7 +20,7 @@ def render(inp) -> dict:
 
     col_in, col_out = st.columns([2, 1], gap="medium")
     with col_in, card():
-        card_title("Operating and valuation assumptions", "5-year DCF with a Gordon growth terminal value.")
+        card_title("Operating and valuation assumptions", "5-year DCF with a Gordon growth terminal value.", "settings")
         c1, c2, c3 = st.columns(3)
         rev0 = c1.number_input("LTM revenue (M)", min_value=0.0, max_value=MAX_M, step=10.0,
                                key="dcf_rev")
@@ -58,27 +59,27 @@ def render(inp) -> dict:
     mkt_cap = tgt_px * tgt_sh
 
     with dash:
-        card_title("Target valuation")
+        card_title("Target valuation", "Discounted cash flow of the Target, standalone.", "dcf")
         k1, k2, k3, k4 = st.columns(4)
-        k1.metric("Enterprise value", fmt_value(dcf["ev"], "m1"))
-        k2.metric("Equity value (DCF)", fmt_value(dcf["equity"], "m1"),
-                  delta=fmt_value(safe_div(dcf["equity"], mkt_cap) - 1, "pct_s") + " vs. market"
-                  if dcf["valid"] else None)
-        k3.metric("Intrinsic value per share", fmt_value(dcf["price"], "m2"))
-        k4.metric("Market price per share", fmt_value(tgt_px, "m2"))
+        metric(k1, "Enterprise value", fmt_value(dcf["ev"], "m1"), "ev")
+        metric(k2, "Equity value (DCF)", fmt_value(dcf["equity"], "m1"), "equity",
+               delta=fmt_value(safe_div(dcf["equity"], mkt_cap) - 1, "pct_s") + " vs. market"
+               if dcf["valid"] else None)
+        metric(k3, "Intrinsic value per share", fmt_value(dcf["price"], "m2"), "per_share")
+        metric(k4, "Market price per share", fmt_value(tgt_px, "m2"), "market")
         if not dcf["valid"]:
-            st.error(f"Invalid DCF: {dcf['reason']} The market price is used as the Target base price.")
+            st.error(f"Invalid DCF: {dcf['reason']} The market price is used as the Target base price.",
+                     icon=icon("error"))
 
     with col_out, card():
-        card_title("Deal base price")
-        st.markdown(f"### {base_price:,.2f}")
-        st.caption(f"Per share, based on the {base_label}. The {inp.premium:.0%} premium is applied on top.")
+        card_title("Deal base price", "The premium is applied on top of this price.", "price")
+        hero("na", f"Per share · {base_label}", f"{base_price:,.2f}",
+             f"Offer at a {inp.premium:.0%} premium: {base_price * (1 + inp.premium):,.2f}", "price")
         st.divider()
-        card_title("Target net income (EPS input)")
+        card_title("Target net income (EPS input)", "Millions, from the DCF: (EBIT − interest) × (1 − t).",
+                   "income")
         for col, yr, val in zip(st.columns(len(YEARS)), YEARS, target["tgt_ni_y"]):
-            col.caption(yr)
-            col.markdown(f"**{val:,.1f}**")
-        st.caption("Millions. From the DCF: (EBIT − interest on its net debt) × (1 − t).")
+            kpi(yr, f"{val:,.1f}", parent=col)
 
     # --- Tables ---
     yrs = [f"Year {i}" for i in dcf["years"]]
@@ -116,10 +117,10 @@ def render(inp) -> dict:
     st.divider()
     left, right = st.columns([3, 2], gap="medium")
     with left, card():
-        card_title("Free cash flow and net income forecast")
+        card_title("Free cash flow and net income forecast", icon_key="table")
         show_table(dcf_proj)
     with right, card():
-        card_title("EV to equity value bridge")
+        card_title("EV to equity value bridge", icon_key="ev")
         show_table(dcf_bridge)
 
     # --- Charts ---
@@ -151,7 +152,7 @@ def render(inp) -> dict:
 
     st.divider()
     dcf_sens = cached_dcf_sensitivity(dcf_inputs)
-    with st.expander("Sensitivity of intrinsic value per share (WACC × g)"):
+    with st.expander("Sensitivity of intrinsic value per share (WACC × g)", icon=icon("sensitivity")):
         sens_fig = go.Figure(go.Heatmap(
             z=dcf_sens.values, x=[f"{v:.1%}" for v in dcf_sens.columns], y=[f"{v:.1%}" for v in dcf_sens.index],
             colorscale=BLUE_SCALE, texttemplate="%{z:,.2f}",
@@ -162,7 +163,7 @@ def render(inp) -> dict:
         style_fig(sens_fig, "Intrinsic value per share", height=420)
         show_chart(sens_fig)
 
-    with st.expander("DCF methodology"):
+    with st.expander("DCF methodology", icon=icon("method")):
         st.markdown(
             """
 - **Revenue** grows at a constant rate; **EBITDA** = revenue × margin; **EBIT** = EBITDA − D&A.

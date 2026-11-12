@@ -16,6 +16,7 @@ from marketdata.yahoo import (
 )
 
 from .components import ST_BTN, card
+from .theme import icon, section
 
 INFO_KEY = "case_info"     # metadata of the loaded case (shown above the tabs)
 ERROR_KEY = "case_error"   # last import error, shown once in the sidebar
@@ -111,18 +112,18 @@ def _load_market() -> None:
 def render_case_loader(parent) -> None:
     """Sidebar card to load a preset deal or import two companies by ticker."""
     with card(parent):
-        st.markdown("**Deal case**")
+        section("case", "Deal case", "Start from a preset or import two listed companies.")
         st.selectbox("Preset", list(CASES), key="case_choice", label_visibility="collapsed")
-        st.button("Load preset", on_click=_load_preset, **ST_BTN)
-        with st.expander("Import from Yahoo Finance"):
+        st.button("Load preset", on_click=_load_preset, icon=icon("load"), type="primary", **ST_BTN)
+        with st.expander("Import from Yahoo", icon=icon("import")):
             c1, c2 = st.columns(2)
             c1.text_input("Acquirer ticker", key="tk_acq", placeholder="e.g. CDNS")
             c2.text_input("Target ticker", key="tk_tgt", placeholder="e.g. PTC")
-            st.button("Fetch and load", on_click=_load_market, **ST_BTN,
+            st.button("Fetch and load", on_click=_load_market, icon=icon("fetch"), **ST_BTN,
                       disabled=not (st.session_state.get("tk_acq") and st.session_state.get("tk_tgt")))
             st.caption("Loads both companies' latest annual financials and current prices. Requires internet.")
         if st.session_state.get(ERROR_KEY):
-            st.error(st.session_state[ERROR_KEY])
+            st.error(st.session_state[ERROR_KEY], icon=icon("error"))
 
 
 def render_case_banner() -> None:
@@ -130,11 +131,15 @@ def render_case_banner() -> None:
     info = st.session_state.get(INFO_KEY)
     if not info:
         return
-    with st.expander(f"Case: {info['name']}", expanded=False):
+    with st.expander(f"Case: {info['name']}", expanded=False, icon=icon("case")):
         st.markdown(info["description"])
+        c1, c2 = st.columns(2, gap="medium")
         if info["sources"]:
-            st.markdown("**Sources**")
-            st.markdown("\n".join(f"- [{label}]({url})" if url else f"- {label}" for label, url in info["sources"]))
+            with c1:
+                st.markdown(f"{icon('source')} **Sources**")
+                st.markdown("\n".join(f"- [{label}]({url})" if url else f"- {label}"
+                                      for label, url in info["sources"]))
         if info["assumptions"]:
-            st.markdown("**Assumptions and caveats**")
-            st.markdown("\n".join(f"- {a}" for a in info["assumptions"]))
+            with c2 if info["sources"] else c1:
+                st.markdown(f"{icon('method')} **Assumptions and caveats**")
+                st.markdown("\n".join(f"- {a}" for a in info["assumptions"]))

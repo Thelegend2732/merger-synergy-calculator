@@ -9,6 +9,7 @@ import streamlit as st
 from engine import GREEN, N_SIM, NAVY, RED, STAT_LABELS, eps_tornado, fmt_value, make_table
 
 from .components import ST_DF, cached_montecarlo, card, card_title, gap, show_chart, style_fig
+from .theme import hero, icon, metric
 
 
 def render(inp, deal: dict, model: dict) -> dict:
@@ -21,7 +22,8 @@ def render(inp, deal: dict, model: dict) -> dict:
     with col_p, card():
         card_title("Simulation parameters",
                    f"{N_SIM:,} draws for {year_sel}. Each driver is normally distributed around the base case "
-                   f"(synergies centred on {cur_syn:,.1f} M); set a volatility to 0 to switch a driver off.")
+                   f"(synergies centred on {cur_syn:,.1f} M); set a volatility to 0 to switch a driver off.",
+                   "settings")
         vol = st.slider("Synergy volatility (std. deviation, %)", 0, 100, step=1, key="mc_vol") / 100
         tni_vol = st.slider("Target net income volatility (%)", 0, 50, step=1, key="mc_tni_vol",
                             help="Execution risk on the acquired business's earnings.") / 100
@@ -34,25 +36,22 @@ def render(inp, deal: dict, model: dict) -> dict:
         seed = st.number_input("Random seed (reproducibility)", min_value=0, max_value=2**31 - 1,
                                step=1, key="mc_seed")
         if cur_syn * vol == 0:
-            st.info("Zero standard deviation (volatility or expected synergies = 0): the simulation is deterministic.")
+            st.info("Zero standard deviation (volatility or expected synergies = 0): the simulation is deterministic.",
+                    icon=icon("info"))
 
     mc = cached_montecarlo(P, deal, inp.yi, vol, int(seed), tni_vol, rate_vol, integ_vol, corr)   # cached
     sa_eps, prob_acc = mc["sa_eps"], mc["prob_acc"]
 
     with dash:
-        card_title(f"Deal risk: {year_sel}")
-        k1, k2, k3, k4, k5 = st.columns(5)
-        k1.metric("Probability accretive", f"{prob_acc:.1f}%",
-                  help="Share of simulations in which the transaction is accretive.")
-        k2.metric("Mean pro-forma EPS", fmt_value(mc["eps_mean"], "eps"),
-                  delta=fmt_value(mc["eps_mean"] - sa_eps, "eps_s"))
-        k3.metric("Deterministic EPS (Summary)", fmt_value(base["pf_eps"], "eps"))
-        k4.metric("Standalone EPS", fmt_value(sa_eps, "eps"))
-        k5.metric("Downside (P5) EPS", fmt_value(mc["eps_p5"], "eps"))
-        if prob_acc >= 50:
-            st.success(f"The deal is accretive in {prob_acc:.1f}% of the {N_SIM:,} simulations.")
-        else:
-            st.error(f"The deal is accretive in only {prob_acc:.1f}% of the {N_SIM:,} simulations.")
+        card_title(f"Deal risk: {year_sel}", f"{N_SIM:,} simulations of the pro-forma EPS.", "montecarlo")
+        hero("ok" if prob_acc >= 50 else "bad", "Probability the deal is accretive", f"{prob_acc:.1f}%",
+             f"Share of the {N_SIM:,} simulations in which pro-forma EPS exceeds standalone EPS.", "probability")
+        k1, k2, k3, k4 = st.columns(4)
+        metric(k1, "Mean pro-forma EPS", fmt_value(mc["eps_mean"], "eps"), "mean",
+               delta=fmt_value(mc["eps_mean"] - sa_eps, "eps_s"))
+        metric(k2, "Deterministic EPS (Summary)", fmt_value(base["pf_eps"], "eps"), "eps")
+        metric(k3, "Standalone EPS", fmt_value(sa_eps, "eps"), "acquirer")
+        metric(k4, "Downside (P5) EPS", fmt_value(mc["eps_p5"], "eps"), "downside")
 
     # Histogram with shared edges for both zones (accretive in green, dilutive in red)
     hist = go.Figure()
@@ -61,7 +60,7 @@ def render(inp, deal: dict, model: dict) -> dict:
     hist.add_trace(go.Bar(x=mc["mids"], y=mc["cnt_dil"], width=mc["widths"], name="Dilutive",
                           marker_color=RED, opacity=0.9))
     hist.add_vline(x=sa_eps, line_dash="dash", line_color=NAVY, line_width=2,
-                   annotation_text=f"Standalone EPS {sa_eps:.3f}", annotation_position="top")
+                   annotation_text=f"Standalone EPS {sa_eps:.3f}", annotation_position="top left")
     hist.update_layout(barmode="stack", bargap=0.02, xaxis_title="Pro-forma EPS", yaxis_title="Frequency",
                        legend=dict(orientation="h", y=1.1, x=1, xanchor="right"))
     style_fig(hist, f"Pro-forma EPS distribution ({N_SIM:,} simulations)", height=460)
@@ -81,7 +80,7 @@ def render(inp, deal: dict, model: dict) -> dict:
                           name="+1 std. dev.", marker_color=GREEN))
     torn.add_vline(x=base_eps, line_color=NAVY, line_width=2)
     torn.add_vline(x=sa_eps, line_dash="dash", line_color=NAVY,
-                   annotation_text=f"Standalone {sa_eps:.3f}", annotation_position="top")
+                   annotation_text=f"Standalone {sa_eps:.3f}", annotation_position="top right")
     lo = min(tornado["EPS low"].min(), sa_eps, base_eps)
     hi = max(tornado["EPS high"].max(), sa_eps, base_eps)
     pad = max((hi - lo) * 0.08, abs(base_eps) * 0.01, 1e-3)
@@ -91,12 +90,13 @@ def render(inp, deal: dict, model: dict) -> dict:
     style_fig(torn, "EPS tornado: impact of each driver (±1 std. dev.)", height=340)
     gap()
     with card():
+        card_title("EPS tornado", "Which driver moves EPS the most (±1 standard deviation, one at a time).", "chart")
         show_chart(torn)
         st.caption("Bars show pro-forma EPS when one driver moves one standard deviation and the rest stay at "
                    "the base case; the solid line is the deterministic EPS.")
 
     with col_p, card():
-        card_title("Simulation statistics")
+        card_title("Simulation statistics", icon_key="table")
         st.dataframe(
             pd.DataFrame({"Statistic": STAT_LABELS,
                           "Pro-forma EPS": [fmt_value(e, "eps") for e in mc["eps_stats"]],

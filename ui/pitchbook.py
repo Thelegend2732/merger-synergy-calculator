@@ -15,6 +15,7 @@ from engine import make_table
 from reports import XLSX_AVAILABLE, build_pitchbook
 
 from .components import ST_BTN, ST_DL, ST_DL_NO_RERUN
+from .theme import icon, section
 
 PB_KEY = "pitchbook"   # st.session_state key holding the prepared workbook
 
@@ -81,9 +82,9 @@ def _signature(inp, out: dict) -> str:
 
 def render(box, inp, out: dict) -> None:
     with box:
-        st.markdown("**Pitchbook**")
+        section("pitchbook", "Excel pitchbook", "Every table of the model in one workbook.")
         if not XLSX_AVAILABLE:
-            st.error("Missing `xlsxwriter`: install it with `pip install xlsxwriter`.")
+            st.error("Missing `xlsxwriter`: install it with `pip install xlsxwriter`.", icon=icon("error"))
             return
         try:
             sig = _signature(inp, out)
@@ -91,7 +92,7 @@ def render(box, inp, out: dict) -> None:
             is_fresh = bool(ready) and ready["sig"] == sig
 
             # 1) Prepare: the only place the workbook is built (only when the user asks)
-            if st.button("Prepare pitchbook (Excel)", type="secondary" if is_fresh else "primary",
+            if st.button("Prepare pitchbook", type="secondary" if is_fresh else "primary", icon=icon("settings"),
                          help="Builds the workbook in memory with the current inputs. It is not rebuilt on every "
                               "interaction.", **ST_BTN):
                 with st.spinner("Building the workbook…"):
@@ -103,17 +104,17 @@ def render(box, inp, out: dict) -> None:
             # 2) Download: serves the prepared bytes only (recomputes nothing)
             if is_fresh:
                 st.download_button(
-                    "Download pitchbook (.xlsx)", data=ready["data"], file_name="Merger_Synergy_Pitchbook.xlsx",
+                    "Download .xlsx", data=ready["data"], file_name="Merger_Synergy_Pitchbook.xlsx", icon=icon("load"),
                     mime="application/vnd.openxmlformats-officedocument.spreadsheetml.sheet", type="primary",
                     **ST_DL, **ST_DL_NO_RERUN,
                 )
-                st.caption(f"Prepared at {ready['stamp']} with the current inputs.")
+                st.caption(f"{icon('ok')} Prepared at {ready['stamp']} with the current inputs.")
             elif ready:
                 st.warning("The prepared pitchbook reflects earlier inputs. Click “Prepare” again for the "
-                           "current version.")
+                           "current version.", icon=icon("warn"))
             else:
                 st.caption("The workbook is only built when you click “Prepare”, so the app stays fast while "
                            "you explore.")
         except Exception as exc:  # the export must never break the app
             st.warning("The pitchbook could not be prepared: a tab has errors or data is missing "
-                       f"({type(exc).__name__}: {exc}).")
+                       f"({type(exc).__name__}: {exc}).", icon=icon("warn"))

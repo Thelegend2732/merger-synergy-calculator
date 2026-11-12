@@ -12,6 +12,7 @@ from engine import (
 )
 
 from .components import card, card_title, gap, show_chart, show_table, style_fig, verdict_metric
+from .theme import hero, icon, metric
 
 
 def render(inp, base_price: float, base_label: str, deal: dict, model: dict) -> dict:
@@ -28,37 +29,39 @@ def render(inp, base_price: float, base_label: str, deal: dict, model: dict) -> 
         card_title(f"{inp.eps_basis} EPS impact: {year_sel}",
                    f"{inp.phases[yi]:.0%} of run-rate synergies ({cur_syn:,.1f} M), integration costs "
                    f"{cur_integ:,.1f} M and DCF-derived Target net income ({cur_tni:,.1f} M). "
-                   f"Target base price: {base_label}.")
-        c1, c2, c3 = st.columns(3)
-        c1.metric("Standalone EPS (Acquirer)", fmt_value(base["sa_eps"], "eps"))
-        c2.metric("Pro-forma EPS", fmt_value(base["pf_eps"], "eps"), delta=fmt_value(base["acc"], "eps_s"))
-        verdict_metric(c3, "Accretion / (dilution)", base["acc_pct"], "pct_s", base["accretive"])
-
+                   f"Target base price: {base_label}.", "summary")
         if pd.isna(base["acc"]):
-            st.warning("EPS cannot be computed: check that shares outstanding are greater than zero.")
+            hero("na", "Verdict", "EPS cannot be computed", "Check that shares outstanding are greater than zero.")
         elif base["accretive"]:
-            st.success(f"The deal is **ACCRETIVE**: EPS rises by {fmt_value(base['acc'], 'eps_s')} "
-                       f"({fmt_value(base['acc_pct'], 'pct_s')}).")
+            hero("ok", f"{inp.eps_basis} EPS verdict · {year_sel}",
+                 f"Accretive {fmt_value(base['acc_pct'], 'pct_s')}",
+                 f"Pro-forma EPS rises by {fmt_value(base['acc'], 'eps_s')} versus the Acquirer standalone.")
         else:
-            st.error(f"The deal is **DILUTIVE**: EPS falls by {fmt_value(base['acc'], 'eps_s')} "
-                     f"({fmt_value(base['acc_pct'], 'pct_s')}).")
+            hero("bad", f"{inp.eps_basis} EPS verdict · {year_sel}",
+                 f"Dilutive {fmt_value(base['acc_pct'], 'pct_s')}",
+                 f"Pro-forma EPS falls by {fmt_value(base['acc'], 'eps_s')} versus the Acquirer standalone.")
+        c1, c2, c3 = st.columns(3)
+        metric(c1, "Standalone EPS (Acquirer)", fmt_value(base["sa_eps"], "eps"), "eps")
+        metric(c2, "Pro-forma EPS", fmt_value(base["pf_eps"], "eps"), "eps", delta=fmt_value(base["acc"], "eps_s"))
+        verdict_metric(c3, "Accretion / (dilution)", base["acc_pct"], "pct_s", base["accretive"])
 
     gap()
     with card():
-        card_title("Deal thresholds", f"{year_sel}: what it would take for the deal to be EPS-neutral.")
+        card_title("Deal thresholds", f"{year_sel}: what it would take for the deal to be EPS-neutral.", "breakeven")
         b1, b2, b3, b4 = st.columns(4)
         no_syn_needed = np.isfinite(be["run_rate"]) and be["run_rate"] <= 0
-        b1.metric("Breakeven synergies (run-rate)", "None needed" if no_syn_needed else fmt_value(be["run_rate"], "m1"),
-                  delta=(fmt_value(be["cushion"], "m1") + " cushion") if np.isfinite(be["cushion"]) else None,
-                  help="Minimum pre-tax run-rate synergies for pro-forma EPS to equal standalone EPS, "
-                       "given the selected year's phasing.")
+        metric(b1, "Breakeven synergies (run-rate)", "None needed" if no_syn_needed else fmt_value(be["run_rate"], "m1"),
+               "breakeven",
+               delta=(fmt_value(be["cushion"], "m1") + " cushion") if np.isfinite(be["cushion"]) else None,
+               help="Minimum pre-tax run-rate synergies for pro-forma EPS to equal standalone EPS, "
+                    "given the selected year's phasing.")
         capped = np.isfinite(max_prem) and max_prem >= 5.0
-        b2.metric("Max EPS-neutral premium", "> 500%" if capped else fmt_value(max_prem, "pct"),
-                  delta=fmt_value(max_prem - inp.premium, "pct_s") + " vs. current"
-                  if np.isfinite(max_prem) and not capped else None,
-                  help="Highest premium over the base price that keeps the deal non-dilutive.")
-        b3.metric("Pro-forma ownership: Acquirer", fmt_value(oc["own_acq"], "pct"))
-        b4.metric("Pro-forma ownership: Target", fmt_value(oc["own_tgt"], "pct"))
+        metric(b2, "Max EPS-neutral premium", "> 500%" if capped else fmt_value(max_prem, "pct"), "premium",
+               delta=fmt_value(max_prem - inp.premium, "pct_s") + " vs. current"
+               if np.isfinite(max_prem) and not capped else None,
+               help="Highest premium over the base price that keeps the deal non-dilutive.")
+        metric(b3, "Pro-forma ownership: Acquirer", fmt_value(oc["own_acq"], "pct"), "acquirer")
+        metric(b4, "Pro-forma ownership: Target", fmt_value(oc["own_tgt"], "pct"), "target")
         if no_syn_needed:
             st.caption("The deal is accretive even with zero synergies.")
         if not np.isfinite(max_prem):
@@ -140,7 +143,7 @@ def render(inp, base_price: float, base_label: str, deal: dict, model: dict) -> 
     st.divider()
     left, right = st.columns([2, 3], gap="medium")
     with left, card():
-        card_title("Transaction summary")
+        card_title("Transaction summary", "Every deal metric for the selected year.", "table")
         show_table(summary)
     with right, card():
         show_chart(wf)
@@ -179,7 +182,7 @@ def render(inp, base_price: float, base_label: str, deal: dict, model: dict) -> 
     st.divider()
     pl, pr = st.columns([2, 3], gap="medium")
     with pl, card():
-        card_title("Purchase price allocation", "Goodwill = price − book equity − intangibles + DTL.")
+        card_title("Purchase price allocation", "Goodwill = price − book equity − intangibles + DTL.", "ppa")
         show_table(ppa)
     with pr, card():
         show_chart(contrib_fig)
@@ -187,7 +190,7 @@ def render(inp, base_price: float, base_label: str, deal: dict, model: dict) -> 
                    "to the Acquirer's shareholders (and vice versa).")
 
     st.divider()
-    with st.expander("Methodology and formulas"):
+    with st.expander("Methodology and formulas", icon=icon("method")):
         st.markdown(
             """
 - **Offer price** = Target base price (DCF or market) × (1 + premium)

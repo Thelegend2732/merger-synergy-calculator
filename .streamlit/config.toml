@@ -1,9 +1,48 @@
+# Visual theme of the app. Colours follow the semantic palette in engine/constants.py
+# (navy = neutral/totals, green = accretive, red = dilutive, amber = watch zone).
 [theme]
 base = "light"
 primaryColor = "#1f4e79"
+backgroundColor = "#f6f8fb"
+secondaryBackgroundColor = "#ffffff"
+textColor = "#1b2a41"
+linkColor = "#1f4e79"
+
+# Typography: Inter for UI text, tabular figures for numbers (set in ui/theme.py)
+font = "Inter:https://fonts.googleapis.com/css2?family=Inter:wght@400;500;600;700&display=swap"
+headingFont = "Inter:https://fonts.googleapis.com/css2?family=Inter:wght@500;600;700&display=swap"
+codeFont = "JetBrains Mono:https://fonts.googleapis.com/css2?family=JetBrains+Mono:wght@400;500&display=swap"
+baseFontSize = 15
+headingFontSizes = ["1.75rem", "1.35rem", "1.15rem", "1rem", "0.95rem", "0.9rem"]
+headingFontWeights = [700, 600, 600, 600, 600, 600]
+metricValueFontSize = "1.65rem"
+metricValueFontWeight = 600
+
+# Shape and borders
+baseRadius = "10px"
+buttonRadius = "8px"
+borderColor = "#dde3ec"
+dataframeBorderColor = "#e3e8f0"
+dataframeHeaderBackgroundColor = "#eef2f7"
+showWidgetBorder = true
+showSidebarBorder = true
+
+# Semantic colours used by st.badge / st.success / st.error ...
+greenColor = "#2e9e5b"
+redColor = "#d64545"
+orangeColor = "#e0a030"
+blueColor = "#1f4e79"
+grayColor = "#6b7280"
+
+chartCategoricalColors = ["#1f4e79", "#2e9e5b", "#e0a030", "#d64545", "#8a8f98", "#5b8def"]
+
+[theme.sidebar]
 backgroundColor = "#ffffff"
 secondaryBackgroundColor = "#f3f6fa"
-textColor = "#1f2d4a"
+borderColor = "#e3e8f0"
 
 [server]
 headless = true
+
+[browser]
+gatherUsageStats = false

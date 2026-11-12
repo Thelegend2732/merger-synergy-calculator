@@ -14,6 +14,7 @@ from marketdata.yahoo import MarketDataError, fetch_multiples
 
 from .cases import COMPS_COLS, table_state
 from .components import ST_BTN, ST_DF, card, card_title, gap, show_chart, show_table, style_fig
+from .theme import icon
 
 EDITOR_CFG = {
     "EV/EBITDA": st.column_config.NumberColumn("EV/EBITDA", format="%.1fx", min_value=0.0),
@@ -59,16 +60,18 @@ def render(inp, dcf_out: dict, deal: dict) -> dict:
     gap()
     left, right = st.columns([3, 2], gap="medium")
     with left, card():
-        card_title("Trading comparables", st.session_state.get("comps_note") or None)
+        card_title("Trading comparables", st.session_state.get("comps_note") or None, "comps")
         comps = st.data_editor(st.session_state["comps"], key="comps_editor", num_rows="dynamic",
                                hide_index=True, column_config=EDITOR_CFG, **ST_DF)
         c1, c2 = st.columns([3, 1], vertical_alignment="bottom")
         c1.text_input("Add peers by ticker (current multiples)", key="peer_tickers", placeholder="e.g. CDNS, PTC, ADSK")
-        c2.button("Fetch", on_click=_fetch_peers, disabled=not st.session_state.get("peer_tickers"), **ST_BTN)
+        c2.button("Fetch", on_click=_fetch_peers, icon=icon("fetch"), disabled=not st.session_state.get("peer_tickers"),
+                  **ST_BTN)
         for err in st.session_state.get("peer_errors", []):
-            st.warning(err)
+            st.warning(err, icon=icon("warn"))
     with right, card():
-        card_title("Precedent transactions", "Multiples paid in comparable acquisitions (control premium included).")
+        card_title("Precedent transactions", "Multiples paid in comparable acquisitions (control premium included).",
+                   "handshake")
         precedents = st.data_editor(st.session_state["precedents"], key="prec_editor", num_rows="dynamic",
                                     hide_index=True, column_config=EDITOR_CFG, **ST_DF)
         w1, w2 = st.columns(2)
@@ -87,8 +90,11 @@ def render(inp, dcf_out: dict, deal: dict) -> dict:
     # --- Football field ---
     gap()
     with card():
+        card_title("Football field", "Implied value per Target share by method, against the market and offer prices.",
+                   "chart")
         if ff.empty:
-            st.info("Add peer or precedent multiples (or a valid DCF) to build the football field.")
+            st.info("Add peer or precedent multiples (or a valid DCF) to build the football field.",
+                    icon=icon("info"))
         else:
             fig = go.Figure()
             fig.add_trace(go.Bar(
@@ -122,17 +128,17 @@ def render(inp, dcf_out: dict, deal: dict) -> dict:
     gap()
     t1, t2 = st.columns([3, 2], gap="medium")
     with t1, card():
-        card_title("Implied value ranges per share")
+        card_title("Implied value ranges per share", icon_key="table")
         st.dataframe(ff.style.format({"Low": "{:,.2f}", "Mid": "{:,.2f}", "High": "{:,.2f}"}),
                      hide_index=True, **ST_DF)
     with t2, card():
-        card_title("Peer multiples vs. the Target")
+        card_title("Peer multiples vs. the Target", icon_key="balance")
         show_table(multiples)
         show_table(target_multiples)
         st.caption(f"Target LTM EBITDA {fmt_value(target['ebitda'], 'm1')} M, revenue "
                    f"{fmt_value(target['revenue'], 'm1')} M, net debt {fmt_value(target['net_debt'], 'm1')} M.")
 
-    with st.expander("Methodology"):
+    with st.expander("Methodology", icon=icon("method")):
         st.markdown(
             """
 - **Implied value per share** = (peer multiple × Target LTM metric − Target net debt) / Target shares.

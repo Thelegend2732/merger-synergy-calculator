@@ -2,8 +2,9 @@
 Reusable Streamlit building blocks: version-compatibility shims, cards, chart styling, error isolation
 and the cached wrappers around the heavy engine calls.
 
-Design: no injected CSS. Colours come from the Streamlit theme (.streamlit/config.toml) and layout is
-built from native components only (bordered containers as cards, asymmetric columns, dividers).
+Design: colours come from the Streamlit theme (.streamlit/config.toml); ui/theme.py adds the icon
+vocabulary, a thin CSS layer and the branded blocks (header, section titles, verdict banner). Layout is
+built from native components (bordered containers as cards, asymmetric columns, dividers).
 """
 from __future__ import annotations
 
@@ -17,6 +18,8 @@ import streamlit as st
 from engine import (
     GREEN, N_SIM, NAVY, RED, dcf_sensitivity, display_table, fmt_value, run_montecarlo, sensitivity_matrix,
 )
+
+from .theme import icon, section
 
 
 # ---------------------------------------------------------------------------
@@ -54,11 +57,9 @@ def card(parent=None):
     return target.container(border=True) if HAS_BORDER else target.container()
 
 
-def card_title(text: str, caption: str | None = None) -> None:
-    """Compact header inside a card."""
-    st.markdown(f"**{text}**")
-    if caption:
-        st.caption(caption)
+def card_title(text: str, caption: str | None = None, icon_key: str = "chart") -> None:
+    """Card header: icon square + title + caption (see ui/theme.section)."""
+    section(icon_key, text, caption)
 
 
 def gap() -> None:
@@ -69,11 +70,12 @@ def gap() -> None:
 def style_fig(fig: go.Figure, title: str, height: int = 440) -> go.Figure:
     """Consistent chart style: transparent background, faint grid, left-aligned title."""
     fig.update_layout(
-        title=dict(text=title, font=dict(size=15, color=NAVY), x=0, xanchor="left"),
+        title=dict(text=f"<b>{title}</b>", font=dict(size=14, color=NAVY), x=0, xanchor="left"),
+        hoverlabel=dict(bgcolor="#1b2a41", font=dict(family="Inter, sans-serif", size=12, color="#fff")),
         template="plotly_white",
         height=height,
         margin=dict(t=56, b=40, l=50, r=20),
-        font=dict(family="sans-serif", size=12),
+        font=dict(family="Inter, sans-serif", size=12, color="#1b2a41"),
         paper_bgcolor="rgba(0,0,0,0)",
         plot_bgcolor="rgba(0,0,0,0)",
     )
@@ -92,9 +94,9 @@ def show_table(df: pd.DataFrame) -> None:
 
 
 def verdict_metric(col, label: str, value: float, fmt: str, accretive: bool) -> None:
-    """Metric whose delta arrow and colour follow the accretive / dilutive verdict."""
+    """Metric whose delta arrow, colour and icon follow the accretive / dilutive verdict."""
     col.metric(label, "ACCRETIVE" if accretive else "DILUTIVE", delta=fmt_value(value, fmt),
-               delta_color="normal")
+               delta_color="normal", border=True, icon=icon("accretive" if accretive else "dilutive"))
 
 
 @contextmanager
@@ -109,7 +111,7 @@ def guarded(container, name: str):
             yield
         except Exception as exc:  # noqa: BLE001
             st.error(f"Error in “{name}”: {type(exc).__name__}: {exc}. "
-                     "Check the inputs; the other tabs keep working.")
+                     "Check the inputs; the other tabs keep working.", icon=icon("error"))
 
 
 # ---------------------------------------------------------------------------

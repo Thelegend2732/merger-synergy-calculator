@@ -6,3 +6,4 @@ venv/
 .streamlit/secrets.toml
 *.xlsx
 .DS_Store
+.claude/

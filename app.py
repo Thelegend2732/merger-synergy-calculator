@@ -4,7 +4,7 @@ Merger Synergy Calculator — Streamlit entry point.
 Run:    streamlit run app.py
 Layout: engine/   pure financial model (no Streamlit)
         reports/  Excel pitchbook export
-        ui/       sidebar, one module per tab, shared components
+        ui/       sidebar, one module per tab, shared components, visual system (theme.py)
 
 Data flow (single source of truth):
   DCF -> value per share -> Target base price -> offer price
@@ -19,27 +19,30 @@ from __future__ import annotations
 
 import streamlit as st
 
-from engine import project_years, require
+from engine import fmt_value, project_years, require
 from ui import alerts, pitchbook, tab_capital, tab_dcf, tab_montecarlo, tab_sensitivity, tab_summary, tab_valuation
-from ui.cases import init_state, render_case_banner
+from ui.cases import INFO_KEY, init_state, render_case_banner
 from ui.components import guarded
 from ui.sidebar import render_sidebar
+from ui.theme import icon, inject_css, render_header
 
-st.set_page_config(page_title="Merger Synergy Calculator", layout="wide")
+st.set_page_config(page_title="Merger Synergy Calculator", page_icon=":material/handshake:", layout="wide",
+                   initial_sidebar_state="expanded")
+inject_css()
 init_state()   # seed widget values (illustrative case) on the first run
 
-st.title("Merger Synergy Calculator")
-st.caption("DCF valuation, capital structure and EPS accretion/dilution "
-           "(amounts in millions, except per-share data).")
+# Tab labels: icon + text. TAB_NAMES (without icons) is what tests and the screenshot script use.
+TAB_NAMES = ["DCF Valuation", "Comps & Football Field", "Capital Structure & Risk", "Transaction Summary",
+             "Projections & Sensitivity", "Monte Carlo Risk"]
+TAB_ICONS = ["dcf", "comps", "capital", "summary", "sensitivity", "montecarlo"]
+TAB_LABELS = [f"{icon(ic)} {name}" for ic, name in zip(TAB_ICONS, TAB_NAMES)]
 
+header_box = st.container()   # filled at the end: the chips need the verdict
 export_box, inp = render_sidebar()
 render_case_banner()
 P = inp.P
 alerts_box = st.container()   # global alerts: filled at the end, visible from every tab
-t_dcf, t_val, t_cap, t_sum, t_sens, t_mc = st.tabs([
-    "DCF Valuation", "Comps & Football Field", "Capital Structure & Risk", "Transaction Summary",
-    "Projections & Sensitivity", "Monte Carlo Risk",
-])
+t_dcf, t_val, t_cap, t_sum, t_sens, t_mc = st.tabs(TAB_LABELS)
 out: dict = {}
 NEEDS_MODEL = "the model could not be computed; check the DCF and Capital Structure tabs."
 
@@ -83,3 +86,20 @@ with guarded(alerts_box, "Model alerts"):
     alerts.render(inp, out, model_err)
 
 pitchbook.render(export_box, inp, out)
+
+# Header band with live status chips (case, analysis year, EPS basis, verdict)
+with header_box:
+    info = st.session_state.get(INFO_KEY) or {}
+    chips = [("case", info.get("name", "Custom inputs"), ""),
+             ("year", f"{inp.year_sel} · {inp.eps_basis} EPS", "")]
+    if model is not None:
+        acc = model["base"]
+        if acc.get("accretive") is not None and acc["acc_pct"] == acc["acc_pct"]:   # not NaN
+            chips.append((
+                "accretive" if acc["accretive"] else "dilutive",
+                f"{'Accretive' if acc['accretive'] else 'Dilutive'} {fmt_value(acc['acc_pct'], 'pct_s')}",
+                "ok" if acc["accretive"] else "bad",
+            ))
+    render_header("Merger Synergy Calculator",
+                  "DCF valuation, capital structure and EPS accretion / dilution · amounts in millions, "
+                  "except per-share data", chips)

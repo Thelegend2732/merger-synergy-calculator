@@ -86,7 +86,7 @@ engine/              Pure financial model (no Streamlit): unit-tested, notebook-
   analytics.py       sensitivity grid, multi-variable Monte Carlo, EPS tornado
 marketdata/          Yahoo Finance fetch + pure mapping to inputs; preset cases with sources
 reports/excel.py     Excel pitchbook (xlsxwriter, in memory)
-ui/                  Sidebar, one module per tab, shared components
+ui/                  Sidebar, one module per tab, shared components, visual system (theme.py)
 tests/               39 tests: engine maths, data mapping, end-to-end app runs (Streamlit AppTest)
 scripts/             Comps snapshot builder, README screenshot generator
 ```
@@ -95,6 +95,15 @@ Design choices worth noting:
 - **Single source of truth**: the DCF feeds both the price and the Target's earnings; the summary, sensitivity grid and Monte Carlo share one base case. Tests check that they agree.
 - **Heavy computations are cached** (`st.cache_data`), and the Excel file is built only on demand.
 - **Every widget reads from session state**, so a whole deal case can be loaded in one click.
+
+## Interface
+
+The UI follows a small design system (see [docs/design_system.md](docs/design_system.md)): every tab opens
+with a verdict banner and KPI tiles, each concept has one Material icon, colour is semantic only
+(navy neutral, green accretive, red dilutive, amber watch zone) and numbers use tabular figures.
+The header band carries live status chips: loaded case, analysis year and EPS basis, verdict.
+
+![Header and status chips](docs/screenshots/header.png)
 
 ## Run locally
 
