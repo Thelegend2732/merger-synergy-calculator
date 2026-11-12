@@ -3,27 +3,27 @@
 [theme]
 base = "light"
 primaryColor = "#1f4e79"
-backgroundColor = "#f6f8fb"
+backgroundColor = "#f7f6f2"
 secondaryBackgroundColor = "#ffffff"
-textColor = "#1b2a41"
+textColor = "#141a26"
 linkColor = "#1f4e79"
 
 # Typography: Inter for UI text, tabular figures for numbers (set in ui/theme.py)
 font = "Inter:https://fonts.googleapis.com/css2?family=Inter:wght@400;500;600;700&display=swap"
-headingFont = "Inter:https://fonts.googleapis.com/css2?family=Inter:wght@500;600;700&display=swap"
+headingFont = "Space Grotesk:https://fonts.googleapis.com/css2?family=Space+Grotesk:wght@500;600;700&display=swap"
 codeFont = "JetBrains Mono:https://fonts.googleapis.com/css2?family=JetBrains+Mono:wght@400;500&display=swap"
 baseFontSize = 15
 headingFontSizes = ["1.75rem", "1.35rem", "1.15rem", "1rem", "0.95rem", "0.9rem"]
 headingFontWeights = [700, 600, 600, 600, 600, 600]
-metricValueFontSize = "1.65rem"
+metricValueFontSize = "1.75rem"
 metricValueFontWeight = 600
 
 # Shape and borders
 baseRadius = "10px"
 buttonRadius = "8px"
-borderColor = "#dde3ec"
-dataframeBorderColor = "#e3e8f0"
-dataframeHeaderBackgroundColor = "#eef2f7"
+borderColor = "#e4e1d8"
+dataframeBorderColor = "#e8e5dc"
+dataframeHeaderBackgroundColor = "#f1efe8"
 showWidgetBorder = true
 showSidebarBorder = true
 
@@ -34,12 +34,17 @@ orangeColor = "#e0a030"
 blueColor = "#1f4e79"
 grayColor = "#6b7280"
 
-chartCategoricalColors = ["#1f4e79", "#2e9e5b", "#e0a030", "#d64545", "#8a8f98", "#5b8def"]
+chartCategoricalColors = ["#1f4e79", "#0ea5a4", "#f59e0b", "#7c3aed", "#d64545", "#2e9e5b"]
 
+# "Lights off" sidebar: dark ink canvas, light text, amber primary for buttons
 [theme.sidebar]
-backgroundColor = "#ffffff"
-secondaryBackgroundColor = "#f3f6fa"
-borderColor = "#e3e8f0"
+backgroundColor = "#0b1220"
+secondaryBackgroundColor = "#151e30"
+textColor = "#e6eaf2"
+primaryColor = "#f59e0b"
+borderColor = "#263247"
+dataframeBorderColor = "#263247"
+grayColor = "#9aa4b5"
 
 [server]
 headless = true

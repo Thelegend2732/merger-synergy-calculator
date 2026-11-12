@@ -51,20 +51,20 @@ def main() -> None:
         page.get_by_role("button", name="Load preset").click()
         settle(page, 4000)
 
-        open_tab(page, "Transaction Summary")
+        open_tab(page, "Summary")
         page.screenshot(path=OUT / "summary.png")
         page.locator(".msc-header").screenshot(path=OUT / "header.png")
         chart_with(page, "EPS bridge").screenshot(path=OUT / "eps_bridge.png")
         chart_with(page, "Contribution analysis").screenshot(path=OUT / "contribution.png")
 
-        open_tab(page, "Comps & Football Field")
+        open_tab(page, "Comps & Football")
         chart_with(page, "Football field").screenshot(path=OUT / "football_field.png")
 
-        open_tab(page, "Monte Carlo Risk")
+        open_tab(page, "Monte Carlo")
         page.screenshot(path=OUT / "monte_carlo.png")
         chart_with(page, "EPS tornado").screenshot(path=OUT / "tornado.png")
 
-        open_tab(page, "Projections & Sensitivity")
+        open_tab(page, "Sensitivity")
         chart_with(page, "Accretion / (dilution), Year").screenshot(path=OUT / "sensitivity.png")
 
         open_tab(page, "DCF Valuation")

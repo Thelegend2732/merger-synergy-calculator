@@ -54,11 +54,11 @@ What the model shows:
 | Tab | What it does |
 |---|---|
 | **DCF Valuation** | 5-year unlevered DCF of the Target (Gordon growth terminal value), EV → equity bridge, WACC × g grid. The DCF also produces the Target's net income used in the pro-forma EPS. |
-| **Comps & Football Field** | Editable trading comps and precedents; fetch current peer multiples by ticker. The football field compares comps, precedents, the DCF range and the 52-week range with the market and offer prices. |
-| **Capital Structure & Risk** | Cash / Senior / Mezzanine split, sources & uses with fees, a 3-year debt schedule, credit metrics and net debt / EBITDA alerts. |
-| **Transaction Summary** | GAAP or adjusted EPS impact, breakeven synergies, max EPS-neutral premium, EPS bridge waterfall, PPA, contribution vs. ownership. |
-| **Projections & Sensitivity** | 3-year accretion/dilution with synergy phasing, and a premium × synergies grid whose centre matches the summary. |
-| **Monte Carlo Risk** | Multi-driver simulation with a correlation input, probability of accretion, downside EPS, tornado chart. |
+| **Comps & Football** | Editable trading comps and precedents; fetch current peer multiples by ticker. The football field compares comps, precedents, the DCF range and the 52-week range with the market and offer prices. |
+| **Capital & Risk** | Cash / Senior / Mezzanine split, sources & uses with fees, a 3-year debt schedule, credit metrics and net debt / EBITDA alerts. |
+| **Summary** | GAAP or adjusted EPS impact, breakeven synergies, max EPS-neutral premium, EPS bridge waterfall, PPA, contribution vs. ownership. |
+| **Sensitivity** | 3-year accretion/dilution with synergy phasing, and a premium × synergies grid whose centre matches the summary. |
+| **Monte Carlo** | Multi-driver simulation with a correlation input, probability of accretion, downside EPS, tornado chart. |
 
 You can also:
 - **Load a deal case** (illustrative or Synopsys / Ansys), or **import any two listed companies** by ticker from Yahoo Finance. The import sets fundamentals, DCF inputs and a CAPM WACC.
@@ -98,10 +98,11 @@ Design choices worth noting:
 
 ## Interface
 
-The UI follows a small design system (see [docs/design_system.md](docs/design_system.md)): every tab opens
-with a verdict banner and KPI tiles, each concept has one Material icon, colour is semantic only
-(navy neutral, green accretive, red dilutive, amber watch zone) and numbers use tabular figures.
-The header band carries live status chips: loaded case, analysis year and EPS basis, verdict.
+The UI follows a small design system (see [docs/design_system.md](docs/design_system.md)) with an editorial,
+"lights off" art direction: a cinematic hero generated in Canva, a dark sidebar for inputs and a light canvas
+for results, uppercase Space Grotesk display type, one accent colour per tab, verdict banners and KPI tiles
+with Material icons, and tabular figures everywhere. Colour is semantic: green accretive, red dilutive,
+amber watch zone.
 
 ![Header and status chips](docs/screenshots/header.png)
 

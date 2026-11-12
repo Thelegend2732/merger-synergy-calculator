@@ -1,8 +1,28 @@
 # Design system
 
-How the app is made to look and behave like a professional financial tool (Bloomberg Terminal, Capital IQ,
-Stripe and Mercury dashboards were the references). Everything below is implemented in
-`.streamlit/config.toml` (theme) and `ui/theme.py` (icon vocabulary, CSS layer, branded blocks).
+How the app is made to look and behave like a professional financial tool with an editorial, campaign-like
+personality. References: Capital IQ and Bloomberg for information density; Stripe and Mercury for KPI tiles;
+[uzik.com](https://www.uzik.com/) for the art direction (uppercase display type, cinematic full-bleed imagery,
+"lights off" contrast, generous whitespace). Everything below is implemented in `.streamlit/config.toml`
+(theme) and `ui/theme.py` (icon vocabulary, CSS layer, branded blocks).
+
+## Art direction ("lights off" editorial)
+
+- **Hero band**: a cinematic image generated in Canva (`ui/assets/hero.jpg`: two glass forms merging under
+  warm amber light, the visual metaphor of a merger) behind an uppercase Space Grotesk title, an amber eyebrow
+  label and live status chips. A left-to-right ink gradient keeps the text legible.
+- **Lights off sidebar**: dark ink (`#0b1220`) with a soft generated light texture (`ui/assets/sidebar.jpg`),
+  amber primary buttons and sliders, translucent cards. Inputs live in the dark; results live in the light.
+- **Warm canvas**: the main area is off-white (`#f7f6f2`) with white cards, so charts and tables stay the
+  brightest thing on screen.
+- **One accent per tab**: DCF teal `#0ea5a4`, Comps amber `#f59e0b`, Capital violet `#7c3aed`, Summary navy
+  `#1f4e79`, Sensitivity coral `#f97316`, Monte Carlo indigo `#4f46e5`. The active tab underline, the section
+  icon squares and the left edge of every KPI tile take the accent, through `ui.theme.scope(key)` (a
+  `st.container(key=...)` whose CSS class scopes the rules).
+- **Verdict banners** are saturated gradients (green, red or ink) with white type, so the answer is the
+  loudest element of each tab.
+- **Editorial type**: Space Grotesk for display (uppercase tabs and eyebrow labels with 0.1-0.16 em tracking,
+  metric values, section titles); Inter for body copy; tabular figures everywhere.
 
 ## Principles
 
@@ -67,14 +87,15 @@ that string for a concept key. Inside HTML blocks the font is used directly (cla
 
 | Token | Value |
 |---|---|
+| Display font | Space Grotesk 500 / 600 / 700 (headings, tabs, eyebrows, metric values) |
 | UI font | Inter 400 / 500 / 600 / 700 (Google Fonts, declared in `config.toml`) |
 | Code font | JetBrains Mono |
 | Base size | 15 px |
 | Headings | h1 1.75 rem · h2 1.35 rem · h3 1.15 rem, weight 600-700 |
 | Metric value | 1.65 rem, weight 600, tabular figures |
 | Radius | 10 px (8 px for buttons) |
-| Borders | `#dde3ec`; data frames `#e3e8f0` with a `#eef2f7` header |
-| Background | page `#f6f8fb`, cards and sidebar `#ffffff` |
+| Borders | `#e4e1d8`; data frames `#e8e5dc` with a `#f1efe8` header |
+| Background | page `#f7f6f2`, cards `#ffffff`, sidebar `#0b1220` (dark) |
 
 ## Colour tokens
 
@@ -91,9 +112,11 @@ The same hex values live in `engine/constants.py`, so charts and UI never drift 
 
 ## Layout blocks (`ui/theme.py`)
 
-- `render_header(title, subtitle, chips)`: navy gradient band with the logo mark and live status chips
-  (loaded case, analysis year and EPS basis, verdict). Rendered at the end of the run so the chips reflect
-  the model.
+- `render_header(title, subtitle, chips, eyebrow)`: hero band over the Canva image with the logo mark,
+  an eyebrow label and live status chips (loaded case, analysis year and EPS basis, verdict). Rendered at
+  the end of the run so the chips reflect the model.
+- `scope(key)`: container that applies a tab's accent colour to everything inside it.
+- `eyebrow(text)`: small uppercase tracked label, the editorial section marker.
 - `section(icon_key, title, caption)`: icon in a tinted square, bold title, grey caption. Every card starts
   with one (`card_title` delegates to it).
 - `hero(state, label, value, sub)`: the verdict banner (green / red / neutral) used for the EPS verdict,
@@ -106,3 +129,9 @@ The same hex values live in `engine/constants.py`, so charts and UI never drift 
 The sidebar reads top-down as a workflow: **Deal case** (load or import) → **Excel pitchbook** (export) →
 **Analysis settings** (year, EPS basis: the two switches that change every tab) → **Deal inputs**, grouped
 in expanders with icons. PPA and phasing are collapsed by default because they are rarely changed.
+
+## Assets
+
+`ui/assets/hero.jpg` (2000 x 1000) and `ui/assets/sidebar.jpg` (600 x 1200) were generated with Canva's
+image generator and exported from the design "Merger Synergy Calculator - UI assets". They are embedded in
+the CSS as data URIs (about 210 KB in total), so the deployed app needs no static file serving.

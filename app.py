@@ -24,7 +24,7 @@ from ui import alerts, pitchbook, tab_capital, tab_dcf, tab_montecarlo, tab_sens
 from ui.cases import INFO_KEY, init_state, render_case_banner
 from ui.components import guarded
 from ui.sidebar import render_sidebar
-from ui.theme import icon, inject_css, render_header
+from ui.theme import icon, inject_css, render_header, scope
 
 st.set_page_config(page_title="Merger Synergy Calculator", page_icon=":material/handshake:", layout="wide",
                    initial_sidebar_state="expanded")
@@ -32,8 +32,7 @@ inject_css()
 init_state()   # seed widget values (illustrative case) on the first run
 
 # Tab labels: icon + text. TAB_NAMES (without icons) is what tests and the screenshot script use.
-TAB_NAMES = ["DCF Valuation", "Comps & Football Field", "Capital Structure & Risk", "Transaction Summary",
-             "Projections & Sensitivity", "Monte Carlo Risk"]
+TAB_NAMES = ["DCF Valuation", "Comps & Football", "Capital & Risk", "Summary", "Sensitivity", "Monte Carlo"]
 TAB_ICONS = ["dcf", "comps", "capital", "summary", "sensitivity", "montecarlo"]
 TAB_LABELS = [f"{icon(ic)} {name}" for ic, name in zip(TAB_ICONS, TAB_NAMES)]
 
@@ -46,16 +45,16 @@ t_dcf, t_val, t_cap, t_sum, t_sens, t_mc = st.tabs(TAB_LABELS)
 out: dict = {}
 NEEDS_MODEL = "the model could not be computed; check the DCF and Capital Structure tabs."
 
-with guarded(t_dcf, "DCF Valuation"):
+with guarded(t_dcf, "DCF Valuation"), scope("dcf"):
     out["dcf"] = tab_dcf.render(inp)
     P.update(out["dcf"]["target"])
 
-with guarded(t_cap, "Capital Structure & Risk"):
+with guarded(t_cap, "Capital Structure & Risk"), scope("capital"):
     require("dcf" in out, "the DCF tab failed; fix it first.")
     out["cap"] = tab_capital.render(inp, out["dcf"]["base_price"])
 
 # Drawn in the second tab, but computed here because the football field needs the offer price
-with guarded(t_val, "Comps & Football Field"):
+with guarded(t_val, "Comps & Football Field"), scope("comps"):
     require("cap" in out, "the Capital Structure tab failed; fix it first.")
     out["val"] = tab_valuation.render(inp, out["dcf"], out["cap"]["deal"])
 
@@ -69,16 +68,16 @@ try:
 except Exception as exc:  # noqa: BLE001 - an earlier tab failed; reported in the alerts box
     model_err = f"{type(exc).__name__}: {exc}"
 
-with guarded(t_sum, "Transaction Summary"):
+with guarded(t_sum, "Transaction Summary"), scope("summary"):
     require(model is not None, NEEDS_MODEL)
     out["summary"] = tab_summary.render(inp, out["dcf"]["base_price"], out["dcf"]["base_label"],
                                         out["cap"]["deal"], model)
 
-with guarded(t_sens, "Projections & Sensitivity"):
+with guarded(t_sens, "Projections & Sensitivity"), scope("sensitivity"):
     require(model is not None, NEEDS_MODEL)
     out["sens"] = tab_sensitivity.render(inp, out["dcf"]["base_price"], out["cap"]["deal"], model)
 
-with guarded(t_mc, "Monte Carlo Risk"):
+with guarded(t_mc, "Monte Carlo Risk"), scope("montecarlo"):
     require(model is not None, NEEDS_MODEL)
     out["mc"] = tab_montecarlo.render(inp, out["cap"]["deal"], model)
 
@@ -101,5 +100,5 @@ with header_box:
                 "ok" if acc["accretive"] else "bad",
             ))
     render_header("Merger Synergy Calculator",
-                  "DCF valuation, capital structure and EPS accretion / dilution · amounts in millions, "
-                  "except per-share data", chips)
+                  "DCF valuation, capital structure and EPS accretion / dilution. Amounts in millions, "
+                  "except per-share data.", chips, eyebrow="M&A analytics · accretion / dilution model")
